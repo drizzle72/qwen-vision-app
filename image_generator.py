@@ -81,6 +81,10 @@ class ImageGenerator:
         返回:
             str: 生成的图像文件路径
         """
+        # 确保prompt不为None
+        if not prompt:
+            prompt = "空白图像"
+            
         # 如果指定了风格，将风格描述添加到提示词
         if style and style in IMAGE_STYLES:
             enhanced_prompt = f"{prompt}，{IMAGE_STYLES[style]}"
@@ -290,7 +294,7 @@ class ImageGenerator:
         # 添加一些文本说明
         timestamp = int(time.time())
         prompt_short = prompt[:30] + "..." if len(prompt) > 30 else prompt
-        output_path = os.path.join(GENERATED_IMAGES_DIR, f"mock_{timestamp}_{prompt_short}_{seed}.png")
+        output_path = os.path.join(GENERATED_IMAGES_DIR, f"mock_{timestamp}_{seed}.png")
         
         # 保存图像
         img.save(output_path)
@@ -405,13 +409,17 @@ class ImageGenerator:
         }
         
         # 从风格获取基础颜色
-        base_colors = style_colors.get(style, [[100, 100, 100], [200, 200, 200], [150, 150, 150]])
+        if not style or style not in style_colors:
+            base_colors = [[100, 100, 100], [200, 200, 200], [150, 150, 150]]
+        else:
+            base_colors = style_colors.get(style)
         
         # 从提示词中查找颜色关键词
         detected_colors = []
-        for keyword, color in color_keywords.items():
-            if keyword in prompt:
-                detected_colors.append(color)
+        if prompt:
+            for keyword, color in color_keywords.items():
+                if keyword in prompt:
+                    detected_colors.append(color)
         
         # 组合颜色
         colors = base_colors + detected_colors if detected_colors else base_colors
@@ -428,6 +436,8 @@ class ImageGenerator:
             str: 模拟的英文文本
         """
         # 简单模拟，实际应用应使用专业翻译API
+        if not text:
+            return ""
         return f"[Translated: {text}]"
 
 # 预处理提示词
