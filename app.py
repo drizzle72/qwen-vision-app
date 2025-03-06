@@ -14,7 +14,7 @@ import textwrap
 import json
 
 # 导入自定义模块
-from qwen_api import QwenAPI, analyze_description, TASK_TYPES
+from qwen_api import QwenAPI, analyze_description, TASK_TYPES, parse_qwen_response
 from food_calories import get_food_calories, get_similar_foods
 from product_search import generate_purchase_links, is_likely_product
 from image_generator import ImageGenerator, get_available_styles, get_quality_options, enhance_prompt
@@ -145,6 +145,33 @@ def download_button(text, filename, button_text):
         )
     os.remove("temp.txt")
 
+def handle_api_response(response_data, default_message="无法解析响应"):
+    """
+    处理API响应数据，提取其中的文本内容
+    
+    参数:
+        response_data (str or dict): API返回的响应数据
+        default_message (str): 当无法解析响应时返回的默认消息
+        
+    返回:
+        str: 提取出的文本内容
+    """
+    try:
+        # 使用parse_qwen_response函数解析响应
+        result = parse_qwen_response(response_data)
+        
+        # 如果结果以"无法解析"或"错误"开头，记录原始响应并返回默认消息
+        if result.startswith("无法解析") or result.startswith("错误"):
+            print(f"API响应解析失败: {result}")
+            print(f"原始响应: {json.dumps(response_data, ensure_ascii=False)[:1000]}...")
+            return default_message
+            
+        return result
+    except Exception as e:
+        print(f"处理API响应时出错: {str(e)}")
+        print(f"原始响应: {str(response_data)[:1000]}...")
+        return default_message
+
 def main():
     # 标题和介绍
     st.markdown('<h1 class="main-title">通义千问视觉智能助手</h1>', unsafe_allow_html=True)
@@ -187,7 +214,23 @@ def main():
             st.markdown("### 上传图片")
             uploaded_file = st.file_uploader("选择一张图片...", type=["jpg", "jpeg", "png"])
             
-            analyze_button = st.button("开始分析", key="analyze_button", disabled=len(selected_tasks) == 0 or uploaded_file is None)
+            # 将分析按钮设为隐藏状态，仅作为后备选项
+            auto_analyze = st.checkbox("自动分析", value=True, key="auto_analyze", 
+                                       help="上传图片后自动开始分析，无需点击按钮")
+            
+            # 添加一个简短的提示
+            if len(selected_tasks) == 0:
+                st.info("请至少选择一项分析任务")
+                
+            if auto_analyze and uploaded_file is not None and len(selected_tasks) > 0:
+                st.success("✅ 已自动开始分析图像...")
+            
+            if not auto_analyze:
+                analyze_button = st.button("开始分析", key="analyze_button", 
+                                         disabled=len(selected_tasks) == 0 or uploaded_file is None)
+            elif uploaded_file is not None and len(selected_tasks) > 0:
+                # 如果启用了自动分析，且有上传文件和选择了任务，自动设置分析按钮为已点击状态
+                st.session_state["analyze_button"] = True
                 
         with tab_generation:
             # 图像生成选项
@@ -327,60 +370,85 @@ def main():
         
         # 分析按钮被点击且有任务被选择
         if st.session_state.get("analyze_button", False) and selected_tasks:
-            with st.spinner("正在分析图像..."):
-                # 创建API实例
-                api = QwenAPI()
+            # 生成唯一的处理标识符
+            if uploaded_file is not None:
+                # 生成一个基于文件内容和选定任务的唯一标识符
+                file_content = uploaded_file.getvalue()
+                image_hash = hash(file_content)
+                tasks_hash = hash(tuple(sorted(selected_tasks)))
+                process_id = f"{image_hash}_{tasks_hash}"
                 
-                # 创建一个标志来表示已经进行了处理，而不是直接修改按钮状态
-                analysis_processed_key = "analysis_processed_" + str(int(time.time()))
-                st.session_state[analysis_processed_key] = True
+                # 检查是否已经处理过这张图像与这些任务的组合
+                if "processed_images" not in st.session_state:
+                    st.session_state["processed_images"] = {}
                 
-                # 存储所有结果
-                results = {}
-                
-                # 对每个选定的任务进行处理
-                for task in selected_tasks:
-                    try:
-                        if temp_image_path is None:
-                            # 如果临时文件保存失败，则使用内存中的图像
-                            image_bytes = io.BytesIO()
-                            image.save(image_bytes, format="JPEG")
-                            image_bytes.seek(0)
+                # 如果这个组合已经被处理过，跳过处理
+                if process_id in st.session_state["processed_images"]:
+                    # 直接显示之前的结果
+                    results = st.session_state["processed_images"][process_id]
+                else:
+                    # 进行新的处理
+                    with st.spinner("正在分析图像..."):
+                        # 创建API实例
+                        api = QwenAPI()
+                        
+                        # 创建一个标志来表示已经进行了处理，而不是直接修改按钮状态
+                        analysis_processed_key = "analysis_processed_" + str(int(time.time()))
+                        st.session_state[analysis_processed_key] = True
+                        
+                        # 存储所有结果
+                        results = {}
+                        
+                        # 对每个选定的任务进行处理
+                        for task in selected_tasks:
+                            try:
+                                if temp_image_path is None:
+                                    # 如果临时文件保存失败，则使用内存中的图像
+                                    image_bytes = io.BytesIO()
+                                    image.save(image_bytes, format="JPEG")
+                                    image_bytes.seek(0)
+                                    
+                                    # 使用自定义提示
+                                    if custom_prompt.get(task):
+                                        task_result = api.process_image_request(
+                                            image_data=image_bytes.getvalue(),
+                                            task_type=task,
+                                            custom_prompt=custom_prompt[task]
+                                        )
+                                    else:
+                                        # 使用默认提示
+                                        task_result = api.process_image_request(
+                                            image_data=image_bytes.getvalue(),
+                                            task_type=task
+                                        )
+                                else:
+                                    # 使用临时文件路径
+                                    if custom_prompt.get(task):
+                                        # 使用自定义提示
+                                        task_result = api.process_image_request(
+                                            image_path=temp_image_path,
+                                            task_type=task,
+                                            custom_prompt=custom_prompt[task]
+                                        )
+                                    else:
+                                        # 使用默认提示
+                                        task_result = api.process_image_request(
+                                            image_path=temp_image_path,
+                                            task_type=task
+                                        )
+                            except Exception as e:
+                                st.error(f"处理任务 '{task}' 时出错: {str(e)}")
+                                task_result = f"处理失败: {str(e)}"
                             
-                            # 使用自定义提示
-                            if custom_prompt.get(task):
-                                task_result = api.process_image_request(
-                                    image_data=image_bytes.getvalue(),
-                                    task_type=task,
-                                    custom_prompt=custom_prompt[task]
-                                )
-                            else:
-                                # 使用默认提示
-                                task_result = api.process_image_request(
-                                    image_data=image_bytes.getvalue(),
-                                    task_type=task
-                                )
-                        else:
-                            # 使用临时文件路径
-                            if custom_prompt.get(task):
-                                # 使用自定义提示
-                                task_result = api.process_image_request(
-                                    image_path=temp_image_path,
-                                    task_type=task,
-                                    custom_prompt=custom_prompt[task]
-                                )
-                            else:
-                                # 使用默认提示
-                                task_result = api.process_image_request(
-                                    image_path=temp_image_path,
-                                    task_type=task
-                                )
-                    except Exception as e:
-                        st.error(f"处理任务 '{task}' 时出错: {str(e)}")
-                        task_result = f"处理失败: {str(e)}"
-                    
-                    # 存储结果
-                    results[task] = task_result
+                            # 解析API响应以获取文本内容
+                            if isinstance(task_result, dict) or isinstance(task_result, str):
+                                task_result = handle_api_response(task_result, f"处理{task}任务失败")
+                            
+                            # 存储结果
+                            results[task] = task_result
+                        
+                        # 保存处理结果以备后用
+                        st.session_state["processed_images"][process_id] = results
                 
                 # 显示结果
                 st.markdown('<h2 class="task-header">分析结果</h2>', unsafe_allow_html=True)
@@ -488,9 +556,17 @@ def main():
                             # 下载按钮
                             download_button(results[task], f"{task_titles[task].split()[1]}.txt", f"下载{task}")
                 
-                # 完成后删除临时文件
-                if temp_image_path and os.path.exists(temp_image_path):
-                    os.remove(temp_image_path)
+                # 如果这是新处理的结果，完成后删除临时文件
+                if process_id not in st.session_state.get("processed_images", {}) or process_id == st.session_state.get("last_processed_id"):
+                    if temp_image_path and os.path.exists(temp_image_path):
+                        try:
+                            os.remove(temp_image_path)
+                            print(f"临时文件 {temp_image_path} 已删除")
+                        except Exception as e:
+                            print(f"删除临时文件出错: {str(e)}")
+                
+                # 记录最后处理的ID
+                st.session_state["last_processed_id"] = process_id
 
     # 处理图像生成
     # 文本到图像生成

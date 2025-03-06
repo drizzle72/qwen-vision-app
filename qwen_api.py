@@ -10,6 +10,7 @@ import requests
 from dotenv import load_dotenv
 from PIL import Image
 import io
+import json
 
 # 加载环境变量
 load_dotenv()
@@ -65,24 +66,28 @@ class QwenAPI:
             print(f"编码图片时出错: {str(e)}")
             raise
     
-    def process_image_request(self, image_path=None, image_base64=None, task_type="识别", custom_prompt=None):
+    def process_image_request(self, image_path=None, image_data=None, task_type="识别", custom_prompt=None):
         """
         处理图片请求，根据任务类型调用API
         
         参数:
             image_path (str, optional): 图片文件路径
-            image_base64 (str, optional): base64编码的图片数据
+            image_data (bytes, optional): 图片二进制数据
             task_type (str): 任务类型 ("识别", "作文", "解题", "故事", "诗歌", "科普")
             custom_prompt (str, optional): 自定义提示，如果提供则覆盖预设的任务提示
             
         返回:
             dict: API返回的处理结果
         """
-        if not image_path and not image_base64:
-            raise ValueError("必须提供图片路径或base64编码的图片数据")
-        
+        # 如果提供了图片二进制数据
+        if image_data and not image_path:
+            try:
+                image_base64 = base64.b64encode(image_data).decode('utf-8')
+            except Exception as e:
+                return {"error": f"无法编码图像数据: {str(e)}"}
+                
         # 如果提供了图片路径，则进行编码
-        if image_path and not image_base64:
+        elif image_path and not image_data:
             try:
                 image_base64 = self.encode_image(image_path)
             except Exception as e:
@@ -96,6 +101,8 @@ class QwenAPI:
                     image_base64 = base64.b64encode(buffered.getvalue()).decode('utf-8')
                 except Exception as pil_error:
                     return {"error": f"无法处理图片: {str(e)}, PIL错误: {str(pil_error)}"}
+        else:
+            raise ValueError("必须提供图片路径或图片二进制数据")
         
         # 获取任务提示
         prompt = custom_prompt if custom_prompt else TASK_TYPES.get(task_type, TASK_TYPES["识别"])
@@ -125,6 +132,57 @@ class QwenAPI:
         except Exception as e:
             return {"error": f"处理过程中出错: {str(e)}"}
     
+    def parse_api_response(self, response):
+        """
+        解析API响应，提取文本内容
+        
+        参数:
+            response (dict): API返回的响应对象
+            
+        返回:
+            str: 提取出的文本内容
+        """
+        if isinstance(response, str):
+            try:
+                # 尝试将字符串解析为JSON
+                response = json.loads(response)
+            except json.JSONDecodeError:
+                # 如果不是有效的JSON，则直接返回原字符串
+                return response
+        
+        # 如果响应中存在error字段
+        if isinstance(response, dict) and "error" in response:
+            return f"错误: {response['error']}"
+        
+        try:
+            # 处理标准API响应格式
+            if isinstance(response, dict) and "output" in response:
+                if "choices" in response["output"] and len(response["output"]["choices"]) > 0:
+                    choice = response["output"]["choices"][0]
+                    
+                    # 处理message.content格式
+                    if "message" in choice and "content" in choice["message"]:
+                        content = choice["message"]["content"]
+                        
+                        # 如果content是列表形式
+                        if isinstance(content, list) and len(content) > 0:
+                            if isinstance(content[0], dict) and "text" in content[0]:
+                                return content[0]["text"]
+                            elif isinstance(content[0], str):
+                                return content[0]
+                        # 如果content是字符串
+                        elif isinstance(content, str):
+                            return content
+            
+            # 尝试其他可能的响应格式
+            if isinstance(response, dict) and "text" in response:
+                return response["text"]
+                
+            # 返回原始响应（用于调试）
+            return f"无法解析响应格式: {json.dumps(response, ensure_ascii=False)}"
+        except Exception as e:
+            return f"解析响应时出错: {str(e)}"
+    
     def get_image_description(self, image_path=None, image_base64=None, use_mock=False):
         """
         获取图片描述
@@ -142,19 +200,14 @@ class QwenAPI:
             return "这是一张示例图片，包含了一些物体。（模拟结果）"
         else:
             try:
-                response = self.process_image_request(image_path, image_base64, "识别")
+                response = self.process_image_request(
+                    image_path=image_path, 
+                    image_data=base64.b64decode(image_base64) if image_base64 else None,
+                    task_type="识别"
+                )
+                return self.parse_api_response(response)
             except Exception as e:
                 return f"API调用失败: {str(e)}"
-        
-        # 处理API响应
-        if "error" in response:
-            return f"错误: {response['error']}"
-        
-        try:
-            return response["output"]["choices"][0]["message"]["content"][0]["text"]
-        except (KeyError, IndexError) as e:
-            print(f"解析API响应时出错: {str(e)} - 响应内容: {response}")
-            return "无法解析API响应"
     
     def generate_essay(self, image_path=None, image_base64=None, custom_prompt=None):
         """
@@ -169,19 +222,15 @@ class QwenAPI:
             str: 生成的作文文本
         """
         try:
-            response = self.process_image_request(image_path, image_base64, "作文", custom_prompt)
+            response = self.process_image_request(
+                image_path=image_path, 
+                image_data=base64.b64decode(image_base64) if image_base64 else None,
+                task_type="作文", 
+                custom_prompt=custom_prompt
+            )
+            return self.parse_api_response(response)
         except Exception as e:
             return f"生成作文失败: {str(e)}"
-        
-        # 处理API响应
-        if "error" in response:
-            return f"错误: {response['error']}"
-        
-        try:
-            return response["output"]["choices"][0]["message"]["content"][0]["text"]
-        except (KeyError, IndexError) as e:
-            print(f"解析作文响应时出错: {str(e)} - 响应内容: {response}")
-            return "无法解析API响应"
     
     def solve_problem(self, image_path=None, image_base64=None, custom_prompt=None):
         """
@@ -196,19 +245,15 @@ class QwenAPI:
             str: 解题过程和答案
         """
         try:
-            response = self.process_image_request(image_path, image_base64, "解题", custom_prompt)
+            response = self.process_image_request(
+                image_path=image_path, 
+                image_data=base64.b64decode(image_base64) if image_base64 else None,
+                task_type="解题", 
+                custom_prompt=custom_prompt
+            )
+            return self.parse_api_response(response)
         except Exception as e:
             return f"解题失败: {str(e)}"
-        
-        # 处理API响应
-        if "error" in response:
-            return f"错误: {response['error']}"
-        
-        try:
-            return response["output"]["choices"][0]["message"]["content"][0]["text"]
-        except (KeyError, IndexError) as e:
-            print(f"解析解题响应时出错: {str(e)} - 响应内容: {response}")
-            return "无法解析API响应"
     
     def generate_creative_content(self, image_path=None, image_base64=None, content_type="故事", custom_prompt=None):
         """
@@ -227,19 +272,15 @@ class QwenAPI:
             content_type = "故事"  # 默认为故事
             
         try:
-            response = self.process_image_request(image_path, image_base64, content_type, custom_prompt)
+            response = self.process_image_request(
+                image_path=image_path, 
+                image_data=base64.b64decode(image_base64) if image_base64 else None,
+                task_type=content_type, 
+                custom_prompt=custom_prompt
+            )
+            return self.parse_api_response(response)
         except Exception as e:
             return f"生成{content_type}失败: {str(e)}"
-        
-        # 处理API响应
-        if "error" in response:
-            return f"错误: {response['error']}"
-        
-        try:
-            return response["output"]["choices"][0]["message"]["content"][0]["text"]
-        except (KeyError, IndexError) as e:
-            print(f"解析{content_type}响应时出错: {str(e)} - 响应内容: {response}")
-            return "无法解析API响应"
 
 def analyze_description(description):
     """
@@ -288,3 +329,78 @@ def analyze_description(description):
     
     # 如果无法确定类型
     return "unknown", description[:20] + "..." if len(description) > 20 else description 
+
+def parse_qwen_response(response_data):
+    """
+    解析通义千问API的响应数据，提取文本内容
+    
+    此函数用于处理通义千问API返回的复杂JSON响应，可直接从响应中提取文本内容。
+    支持字符串和字典格式的输入，可处理多种不同的响应结构。
+    
+    参数:
+        response_data (str or dict): API返回的响应数据，可以是JSON字符串或已解析的字典
+        
+    返回:
+        str: 提取出的文本内容
+    
+    示例:
+        >>> response = {'output': {'choices': [{'message': {'content': [{'text': '这是一张美食图片'}]}}]}}
+        >>> parse_qwen_response(response)
+        '这是一张美食图片'
+        
+        >>> json_str = '{"output": {"choices": [{"finish_reason": "stop", "message": {"role": "assistant", "content": [{"text": "这是描述文本"}]}}]}}'
+        >>> parse_qwen_response(json_str)
+        '这是描述文本'
+    """
+    if isinstance(response_data, str):
+        try:
+            # 尝试将字符串解析为JSON
+            response_data = json.loads(response_data)
+        except json.JSONDecodeError:
+            # 如果不是有效的JSON，则直接返回原字符串
+            return response_data
+    
+    # 如果响应中存在error字段
+    if isinstance(response_data, dict) and "error" in response_data:
+        return f"错误: {response_data['error']}"
+    
+    try:
+        # 处理标准API响应格式
+        if isinstance(response_data, dict) and "output" in response_data:
+            if "choices" in response_data["output"] and len(response_data["output"]["choices"]) > 0:
+                choice = response_data["output"]["choices"][0]
+                
+                # 处理message.content格式
+                if "message" in choice and "content" in choice["message"]:
+                    content = choice["message"]["content"]
+                    
+                    # 如果content是列表形式
+                    if isinstance(content, list) and len(content) > 0:
+                        if isinstance(content[0], dict) and "text" in content[0]:
+                            return content[0]["text"]
+                        elif isinstance(content[0], str):
+                            return content[0]
+                    # 如果content是字符串
+                    elif isinstance(content, str):
+                        return content
+        
+        # 尝试其他可能的响应格式
+        if isinstance(response_data, dict):
+            # 直接检查text字段
+            if "text" in response_data:
+                return response_data["text"]
+            
+            # 检查是否有choices列表
+            if "choices" in response_data and len(response_data["choices"]) > 0:
+                choice = response_data["choices"][0]
+                if isinstance(choice, dict):
+                    if "message" in choice and "content" in choice["message"]:
+                        content = choice["message"]["content"]
+                        if isinstance(content, list) and len(content) > 0:
+                            if isinstance(content[0], dict) and "text" in content[0]:
+                                return content[0]["text"]
+        
+        # 返回原始响应（用于调试）
+        return f"无法解析响应格式: {json.dumps(response_data, ensure_ascii=False)}"
+    except Exception as e:
+        return f"解析响应时出错: {str(e)}" 
