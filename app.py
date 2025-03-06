@@ -11,6 +11,7 @@ from PIL import Image
 import streamlit as st
 from dotenv import load_dotenv
 import textwrap
+import json
 
 # 导入自定义模块
 from qwen_api import QwenAPI, analyze_description, TASK_TYPES
@@ -127,8 +128,14 @@ def save_text_as_file(text, filename):
 
 def download_button(text, filename, button_text):
     """创建下载按钮"""
+    # 转换text为字符串（如果是字典则进行JSON转换）
+    if isinstance(text, dict):
+        text_str = json.dumps(text, ensure_ascii=False, indent=2)
+    else:
+        text_str = str(text)
+        
     with open("temp.txt", "w", encoding="utf-8") as f:
-        f.write(text)
+        f.write(text_str)
     with open("temp.txt", "r", encoding="utf-8") as f:
         st.download_button(
             label=button_text,
@@ -237,12 +244,20 @@ def main():
                     final_style = selected_style3
                     
                 # 更新最后使用的风格部分
-                if "style_basic" in st.session_state.changed_widgets:
+                # 使用按钮或检查当前选择的值来确定最后使用的风格部分
+                st_basic = st.button("使用此基础风格", key="use_basic_style")
+                st_art = st.button("使用此艺术风格", key="use_art_style")
+                st_special = st.button("使用此特殊风格", key="use_special_style")
+                
+                if st_basic:
                     st.session_state["last_used_style_section"] = "basic"
-                elif "style_art" in st.session_state.changed_widgets:
+                    final_style = selected_style
+                elif st_art:
                     st.session_state["last_used_style_section"] = "art"
-                elif "style_special" in st.session_state.changed_widgets:
+                    final_style = selected_style2
+                elif st_special:
                     st.session_state["last_used_style_section"] = "special"
+                    final_style = selected_style3
                 
                 # 质量选择
                 st.write("### 图像质量")
@@ -292,9 +307,23 @@ def main():
         # 显示上传的图片
         st.image(image, caption="上传的图片", use_column_width=True)
         
-        # 保存图片到临时文件
-        temp_image_path = "temp_image.jpg"
-        image.save(temp_image_path)
+        # 保存图片到临时文件，使用唯一的文件名避免冲突
+        try:
+            timestamp = int(time.time())
+            random_suffix = os.urandom(4).hex()
+            temp_image_path = f"temp_image_{timestamp}_{random_suffix}.jpg"
+            
+            # 确保临时目录存在
+            temp_dir = os.path.dirname(temp_image_path)
+            if temp_dir and not os.path.exists(temp_dir):
+                os.makedirs(temp_dir, exist_ok=True)
+                
+            # 保存图像
+            image.save(temp_image_path)
+        except Exception as e:
+            st.error(f"保存临时图像时出错: {str(e)}")
+            st.warning("将尝试使用内存中的图像进行处理...")
+            temp_image_path = None
         
         # 分析按钮被点击且有任务被选择
         if st.session_state.get("analyze_button", False) and selected_tasks:
@@ -302,27 +331,53 @@ def main():
                 # 创建API实例
                 api = QwenAPI()
                 
-                # 清空会话状态中的分析按钮状态
-                st.session_state["analyze_button"] = False
+                # 创建一个标志来表示已经进行了处理，而不是直接修改按钮状态
+                analysis_processed_key = "analysis_processed_" + str(int(time.time()))
+                st.session_state[analysis_processed_key] = True
                 
                 # 存储所有结果
                 results = {}
                 
                 # 对每个选定的任务进行处理
                 for task in selected_tasks:
-                    if custom_prompt.get(task):
-                        # 使用自定义提示
-                        task_result = api.process_image_request(
-                            image_path=temp_image_path,
-                            task_type=task,
-                            custom_prompt=custom_prompt[task]
-                        )
-                    else:
-                        # 使用默认提示
-                        task_result = api.process_image_request(
-                            image_path=temp_image_path,
-                            task_type=task
-                        )
+                    try:
+                        if temp_image_path is None:
+                            # 如果临时文件保存失败，则使用内存中的图像
+                            image_bytes = io.BytesIO()
+                            image.save(image_bytes, format="JPEG")
+                            image_bytes.seek(0)
+                            
+                            # 使用自定义提示
+                            if custom_prompt.get(task):
+                                task_result = api.process_image_request(
+                                    image_data=image_bytes.getvalue(),
+                                    task_type=task,
+                                    custom_prompt=custom_prompt[task]
+                                )
+                            else:
+                                # 使用默认提示
+                                task_result = api.process_image_request(
+                                    image_data=image_bytes.getvalue(),
+                                    task_type=task
+                                )
+                        else:
+                            # 使用临时文件路径
+                            if custom_prompt.get(task):
+                                # 使用自定义提示
+                                task_result = api.process_image_request(
+                                    image_path=temp_image_path,
+                                    task_type=task,
+                                    custom_prompt=custom_prompt[task]
+                                )
+                            else:
+                                # 使用默认提示
+                                task_result = api.process_image_request(
+                                    image_path=temp_image_path,
+                                    task_type=task
+                                )
+                    except Exception as e:
+                        st.error(f"处理任务 '{task}' 时出错: {str(e)}")
+                        task_result = f"处理失败: {str(e)}"
                     
                     # 存储结果
                     results[task] = task_result
@@ -347,18 +402,45 @@ def main():
                             st.markdown("#### 🍎 食物热量信息")
                             
                             for food in food_items:
-                                calories, unit = get_food_calories(food)
-                                if calories:
-                                    st.markdown(f"**{food}**: {calories} 千卡/{unit}")
+                                food_info = get_food_calories(food)
+                                
+                                # 检查返回值是否为字典类型
+                                if isinstance(food_info, dict):
+                                    calories = food_info.get("热量")
+                                    description = food_info.get("描述", "")
                                     
-                                    # 显示类似食物
-                                    similar_foods = get_similar_foods(food)
-                                    if similar_foods:
-                                        with st.expander(f"查看类似于「{food}」的食物"):
-                                            for similar_food, similar_calories in similar_foods.items():
-                                                st.markdown(f"**{similar_food}**: {similar_calories} 千卡")
+                                    if calories:
+                                        st.markdown(f"**{food}**: {calories} 千卡/100克")
+                                        
+                                        # 如果有更详细的描述，显示它
+                                        if description and description != f"{food}平均每100克含有{calories}千卡热量":
+                                            st.caption(description)
+                                            
+                                        # 如果有营养素信息，显示它
+                                        if "营养素" in food_info:
+                                            with st.expander(f"查看「{food}」的营养素信息"):
+                                                for nutrient, value in food_info["营养素"].items():
+                                                    st.markdown(f"**{nutrient}**: {value}克")
+                                        
+                                        # 显示类似食物
+                                        similar_foods = get_similar_foods(food)
+                                        if similar_foods:
+                                            with st.expander(f"查看类似于「{food}」的食物"):
+                                                if isinstance(similar_foods, dict):
+                                                    for similar_food, similar_calories in similar_foods.items():
+                                                        st.markdown(f"**{similar_food}**: {similar_calories} 千卡")
+                                                elif isinstance(similar_foods, list):
+                                                    for similar_food in similar_foods:
+                                                        st.markdown(f"**{similar_food}**")
+                                    else:
+                                        st.markdown(f"**{food}**: 未找到热量信息")
                                 else:
-                                    st.markdown(f"**{food}**: 未找到热量信息")
+                                    # 兼容旧版本返回格式
+                                    calories, unit = food_info if isinstance(food_info, tuple) else (food_info, "100克")
+                                    if calories:
+                                        st.markdown(f"**{food}**: {calories} 千卡/{unit}")
+                                    else:
+                                        st.markdown(f"**{food}**: 未找到热量信息")
                             
                             st.markdown('</div>', unsafe_allow_html=True)
                         
@@ -407,7 +489,7 @@ def main():
                             download_button(results[task], f"{task_titles[task].split()[1]}.txt", f"下载{task}")
                 
                 # 完成后删除临时文件
-                if os.path.exists(temp_image_path):
+                if temp_image_path and os.path.exists(temp_image_path):
                     os.remove(temp_image_path)
 
     # 处理图像生成
@@ -415,12 +497,24 @@ def main():
     if st.session_state.get("generation_mode") == "文本生成图像" and st.session_state.get("generate_text_button", False):
         if st.session_state.get("text_prompt"):
             with st.spinner("正在生成图像..."):
-                # 清空生成按钮状态
-                st.session_state["generate_text_button"] = False
+                # 创建一个标志来表示已经进行了处理，而不是直接修改按钮状态
+                text_processed_key = "text_processed_" + str(int(time.time()))
+                st.session_state[text_processed_key] = True
                 
                 # 获取参数
                 prompt = st.session_state.get("text_prompt")
-                style = final_style
+                
+                # 根据最后使用的按钮决定使用哪个风格
+                if "last_used_style_section" not in st.session_state:
+                    # 默认使用基础风格
+                    style = selected_style
+                elif st.session_state["last_used_style_section"] == "art":
+                    style = selected_style2
+                elif st.session_state["last_used_style_section"] == "special":
+                    style = selected_style3
+                else:
+                    style = selected_style
+                
                 quality = st.session_state.get("selected_quality", "标准")
                 negative_prompt = st.session_state.get("negative_prompt")
                 use_mock = st.session_state.get("use_mock", False)
@@ -484,8 +578,9 @@ def main():
     if st.session_state.get("generation_mode") == "图像变体生成" and st.session_state.get("generate_variation_button", False):
         if st.session_state.get("variation_file"):
             with st.spinner("正在生成图像变体..."):
-                # 清空生成按钮状态
-                st.session_state["generate_variation_button"] = False
+                # 创建一个标志来表示已经进行了处理，而不是直接修改按钮状态
+                variation_processed_key = "variation_processed_" + str(int(time.time()))
+                st.session_state[variation_processed_key] = True
                 
                 # 获取上传的图像
                 variation_file = st.session_state.get("variation_file")
