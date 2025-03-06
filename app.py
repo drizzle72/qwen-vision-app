@@ -348,7 +348,7 @@ def main():
         image = Image.open(uploaded_file)
         
         # 显示上传的图片
-        st.image(image, caption="上传的图片", use_column_width=True)
+        st.image(image, caption="上传的图片", use_container_width=True)
         
         # 保存图片到临时文件，使用唯一的文件名避免冲突
         try:
@@ -624,7 +624,7 @@ def main():
                         
                         # 显示图像
                         st.markdown('<div class="generated-image">', unsafe_allow_html=True)
-                        st.image(generated_image, caption=f"AI生成图像 - {style}风格", use_column_width=True)
+                        st.image(generated_image, caption=f"AI生成图像 - {style}风格", use_container_width=True)
                         st.markdown('</div>', unsafe_allow_html=True)
                         
                         # 创建下载按钮
@@ -689,7 +689,7 @@ def main():
                     
                     with col1:
                         st.markdown("**原始图像**")
-                        st.image(variation_image, use_column_width=True)
+                        st.image(variation_image, use_container_width=True)
                         
                     with col2:
                         if os.path.exists(variation_image_path):
@@ -697,7 +697,7 @@ def main():
                             
                             # 打开生成的变体图像
                             result_image = Image.open(variation_image_path)
-                            st.image(result_image, use_column_width=True)
+                            st.image(result_image, use_container_width=True)
                             
                             # 创建下载按钮
                             with open(variation_image_path, "rb") as img_file:
