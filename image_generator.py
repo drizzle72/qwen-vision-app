@@ -52,6 +52,25 @@ IMAGE_QUALITY = {
     "超清": {"width": 1024, "height": 1024, "steps": 50}
 }
 
+# 图像比例选项
+IMAGE_ASPECT_RATIOS = {
+    "1:1 方形": {"width_ratio": 1, "height_ratio": 1, "description": "适合正方形构图"},
+    "4:3 横向": {"width_ratio": 4, "height_ratio": 3, "description": "适合风景和传统显示"},
+    "3:4 纵向": {"width_ratio": 3, "height_ratio": 4, "description": "适合人像和垂直场景"},
+    "16:9 宽屏": {"width_ratio": 16, "height_ratio": 9, "description": "适合宽屏显示和视频"},
+    "9:16 手机": {"width_ratio": 9, "height_ratio": 16, "description": "适合手机屏幕和故事模式"}
+}
+
+# 可用的提示词增强器列表
+PROMPT_ENHANCERS = {
+    "细节增强": "highly detailed, intricate details, fine details, sharp focus",
+    "光照优化": "perfect lighting, studio lighting, rim light, soft illumination",
+    "清晰度提升": "high resolution, 8k, ultra high definition, sharp, clear",
+    "摄影风格": "professional photography, dslr, 85mm lens, bokeh, award winning photo",
+    "色彩增强": "vibrant colors, colorful, perfect composition, vivid",
+    "环境氛围": "atmospheric, golden hour, dramatic, cinematic lighting"
+}
+
 class ImageGenerator:
     """图像生成类"""
     
@@ -66,7 +85,8 @@ class ImageGenerator:
         if not self.stability_api_key:
             print("警告: 未提供Stability API密钥，将使用模拟生成模式")
             
-    def generate_from_text(self, prompt, style=None, quality="标准", negative_prompt=None, seed=None, use_mock=False):
+    def generate_from_text(self, prompt, style=None, quality="标准", aspect_ratio="1:1 方形", 
+                          negative_prompt=None, seed=None, enhancers=None, use_mock=False):
         """
         根据文本提示生成图像
         
@@ -74,8 +94,10 @@ class ImageGenerator:
             prompt (str): 图像描述文本
             style (str, optional): 图像风格
             quality (str): 图像质量 ("标准", "高清", "超清")
+            aspect_ratio (str): 图像比例 ("1:1 方形", "4:3 横向", "3:4 纵向", "16:9 宽屏", "9:16 手机")
             negative_prompt (str, optional): 负面提示词
             seed (int, optional): 随机种子
+            enhancers (list, optional): 要应用的提示词增强器列表
             use_mock (bool): 是否使用模拟模式
             
         返回:
@@ -85,11 +107,19 @@ class ImageGenerator:
         if not prompt:
             prompt = "空白图像"
             
+        # 应用提示词增强器
+        enhanced_prompt = prompt
+        if enhancers:
+            enhancer_texts = []
+            for enhancer in enhancers:
+                if enhancer in PROMPT_ENHANCERS:
+                    enhancer_texts.append(PROMPT_ENHANCERS[enhancer])
+            if enhancer_texts:
+                enhanced_prompt = f"{prompt}, {', '.join(enhancer_texts)}"
+                
         # 如果指定了风格，将风格描述添加到提示词
         if style and style in IMAGE_STYLES:
-            enhanced_prompt = f"{prompt}，{IMAGE_STYLES[style]}"
-        else:
-            enhanced_prompt = prompt
+            enhanced_prompt = f"{enhanced_prompt}，{IMAGE_STYLES[style]}"
             
         # 中文提示词转换为英文(实际项目中应调用翻译API)
         # 这里我们简单模拟这个过程，实际应用中可以使用百度、谷歌等翻译API
@@ -97,6 +127,29 @@ class ImageGenerator:
         
         # 获取质量参数
         quality_params = IMAGE_QUALITY.get(quality, IMAGE_QUALITY["标准"])
+        
+        # 应用比例
+        if aspect_ratio in IMAGE_ASPECT_RATIOS:
+            ratio_info = IMAGE_ASPECT_RATIOS[aspect_ratio]
+            # 计算新的宽高，保持像素总数大致相同
+            base_size = quality_params["width"]  # 使用原始宽度作为基准
+            width_ratio = ratio_info["width_ratio"]
+            height_ratio = ratio_info["height_ratio"]
+            
+            # 计算比例系数，保持总像素数接近原始值
+            pixel_ratio = (width_ratio * height_ratio) ** 0.5
+            
+            # 计算新的宽高
+            adjusted_width = int(base_size * (width_ratio / pixel_ratio))
+            adjusted_height = int(base_size * (height_ratio / pixel_ratio))
+            
+            # 确保宽高是8的倍数(某些API有此要求)
+            adjusted_width = (adjusted_width // 8) * 8
+            adjusted_height = (adjusted_height // 8) * 8
+            
+            # 更新质量参数
+            quality_params["width"] = adjusted_width
+            quality_params["height"] = adjusted_height
         
         # 如果未提供种子，生成随机种子
         if seed is None:
@@ -223,83 +276,254 @@ class ImageGenerator:
         random.seed(seed)
         np.random.seed(seed)
         
-        # 创建一个随机颜色的基础图像
+        # 获取图像尺寸
         width = quality_params["width"]
         height = quality_params["height"]
         
         # 根据提示词和风格确定主色调
-        # 这只是一个简单的演示，实际上不同提示词应有不同的视觉效果
         colors = self._get_colors_from_prompt(prompt, style)
         
-        # 创建图像
-        img_array = np.zeros((height, width, 3), dtype=np.uint8)
-        
-        # 根据风格选择不同的生成方式
-        if style in ["像素艺术", "二次元", "极简主义"]:
-            # 创建方块图案
-            block_size = max(4, width // 64)
-            for y in range(0, height, block_size):
-                for x in range(0, width, block_size):
+        # 创建一个空白图像
+        try:
+            from PIL import Image, ImageDraw, ImageFilter, ImageEnhance, ImageOps
+            
+            # 基于风格选择不同的生成方法
+            img = None
+            
+            if style in ["写实", "摄影"]:
+                # 创建渐变背景
+                img = Image.new('RGB', (width, height), colors[0])
+                draw = ImageDraw.Draw(img)
+                
+                # 添加一些景深效果
+                for i in range(100):
+                    x1 = random.randint(0, width)
+                    y1 = random.randint(0, height)
+                    x2 = random.randint(0, width)
+                    y2 = random.randint(0, height)
+                    
+                    size = random.randint(50, 200)
                     color = random.choice(colors)
-                    img_array[y:min(y+block_size, height), x:min(x+block_size, width)] = color
+                    blur = random.randint(10, 70)
+                    
+                    ellipse_img = Image.new('RGBA', (width, height), (0, 0, 0, 0))
+                    ellipse_draw = ImageDraw.Draw(ellipse_img)
+                    ellipse_draw.ellipse([x1, y1, x1+size, y1+size], fill=color + (100,))
+                    
+                    # 应用高斯模糊
+                    ellipse_img = ellipse_img.filter(ImageFilter.GaussianBlur(radius=blur/10))
+                    
+                    # 混合图层
+                    img = Image.alpha_composite(img.convert('RGBA'), ellipse_img).convert('RGB')
+                
+                # 添加一些锐化
+                enhancer = ImageEnhance.Sharpness(img)
+                img = enhancer.enhance(1.5)
+                
+            elif style in ["油画", "印象派"]:
+                # 创建油画效果
+                img = Image.new('RGB', (width, height), (240, 240, 240))
+                draw = ImageDraw.Draw(img)
+                
+                # 创建背景
+                for y in range(0, height, 4):
+                    for x in range(0, width, 4):
+                        color = random.choice(colors)
+                        size = random.randint(3, 15)
+                        draw.rectangle([x, y, x+size, y+size], fill=color)
+                
+                # 添加一些笔触
+                for _ in range(width * height // 500):
+                    x = random.randint(0, width)
+                    y = random.randint(0, height)
+                    size = random.randint(5, 30)
+                    color = random.choice(colors)
+                    angle = random.randint(0, 360)
+                    
+                    # 画一个旋转的矩形模拟笔触
+                    brush = Image.new('RGBA', (size * 3, size), (0, 0, 0, 0))
+                    brush_draw = ImageDraw.Draw(brush)
+                    brush_draw.rectangle([0, 0, size * 2, size], fill=color + (200,))
+                    
+                    # 旋转并粘贴
+                    brush = brush.rotate(angle, expand=True)
+                    img.paste(brush, (x - brush.width//2, y - brush.height//2), brush)
+                
+                # 添加帆布纹理
+                texture = Image.new('RGB', (width, height), (0, 0, 0))
+                for y in range(0, height, 2):
+                    for x in range(0, width, 2):
+                        noise = random.randint(-15, 15)
+                        texture.putpixel((x % width, y % height), (noise+128, noise+128, noise+128))
+                
+                # 混合纹理
+                img = Image.blend(img, texture, 0.1)
+                
+            elif style in ["水彩"]:
+                # 创建水彩效果
+                img = Image.new('RGB', (width, height), (250, 250, 250))
+                
+                # 添加水彩色块
+                for _ in range(20):
+                    mask = Image.new('L', (width, height), 0)
+                    mask_draw = ImageDraw.Draw(mask)
+                    
+                    # 不规则形状
+                    points = []
+                    center_x = random.randint(width // 4, width * 3 // 4)
+                    center_y = random.randint(height // 4, height * 3 // 4)
+                    num_points = random.randint(5, 15)
+                    
+                    for i in range(num_points):
+                        angle = i * (360 / num_points)
+                        distance = random.randint(width//10, width//3)
+                        x = center_x + int(distance * np.cos(np.radians(angle)))
+                        y = center_y + int(distance * np.sin(np.radians(angle)))
+                        points.append((x, y))
+                    
+                    mask_draw.polygon(points, fill=random.randint(150, 250))
+                    
+                    # 模糊并应用
+                    mask = mask.filter(ImageFilter.GaussianBlur(radius=30))
+                    
+                    # 创建彩色层
+                    color_layer = Image.new('RGB', (width, height), random.choice(colors))
+                    
+                    # 组合
+                    img = Image.composite(color_layer, img, mask)
+                
+                # 应用水彩效果
+                img = img.filter(ImageFilter.SMOOTH_MORE)
+                img = img.filter(ImageFilter.EDGE_ENHANCE_MORE)
+                
+                # 增加对比度
+                enhancer = ImageEnhance.Contrast(img)
+                img = enhancer.enhance(1.2)
+                
+            elif style in ["二次元", "动漫"]:
+                # 创建动漫风格
+                img = Image.new('RGB', (width, height), (250, 250, 250))
+                draw = ImageDraw.Draw(img)
+                
+                # 背景
+                for y in range(0, height, 10):
+                    color_index = random.randint(0, len(colors)-1)
+                    color = colors[color_index]
+                    draw.rectangle([0, y, width, y+random.randint(10, 50)], fill=color, width=0)
+                
+                # 添加一些圆形
+                for _ in range(width * height // 20000):
+                    x = random.randint(0, width)
+                    y = random.randint(0, height)
+                    size = random.randint(width//10, width//3)
+                    color = random.choice(colors)
+                    
+                    # 模拟动漫风格的色块
+                    circle_img = Image.new('RGBA', (width, height), (0, 0, 0, 0))
+                    circle_draw = ImageDraw.Draw(circle_img)
+                    circle_draw.ellipse([x-size//2, y-size//2, x+size//2, y+size//2], fill=color + (150,))
+                    
+                    # 应用
+                    img = Image.alpha_composite(img.convert('RGBA'), circle_img).convert('RGB')
+                
+                # 增强边缘
+                img = img.filter(ImageFilter.EDGE_ENHANCE)
+                img = img.filter(ImageFilter.SMOOTH)
+                
+            elif style in ["像素艺术"]:
+                # 像素风
+                pixel_size = max(2, width // 64)  # 根据图像大小确定像素大小
+                small_width = width // pixel_size
+                small_height = height // pixel_size
+                
+                # 创建低分辨率图像
+                img = Image.new('RGB', (small_width, small_height), (0, 0, 0))
+                draw = ImageDraw.Draw(img)
+                
+                # 绘制像素内容
+                for y in range(small_height):
+                    for x in range(small_width):
+                        if random.random() < 0.5:
+                            draw.point([x, y], random.choice(colors))
+                        else:
+                            # 偶尔画一些几何形状
+                            if random.random() < 0.01:
+                                shape_size = random.randint(1, 3)
+                                draw.rectangle([x, y, x+shape_size, y+shape_size], random.choice(colors))
+                
+                # 放大到指定尺寸，禁用平滑保持像素锐利
+                img = img.resize((width, height), Image.NEAREST)
+                
+            else:
+                # 默认生成方法
+                img = Image.new('RGB', (width, height), (220, 220, 220))
+                draw = ImageDraw.Draw(img)
+                
+                # 创建随机几何图形
+                for _ in range(width * height // 8000):
+                    shape_type = random.choice(['rectangle', 'ellipse', 'line'])
+                    color = random.choice(colors)
+                    x1 = random.randint(0, width)
+                    y1 = random.randint(0, height)
+                    x2 = x1 + random.randint(width//10, width//2)
+                    y2 = y1 + random.randint(height//10, height//2)
+                    
+                    if shape_type == 'rectangle':
+                        draw.rectangle([x1, y1, x2, y2], fill=color)
+                    elif shape_type == 'ellipse':
+                        draw.ellipse([x1, y1, x2, y2], fill=color)
+                    else:  # line
+                        thickness = random.randint(1, 10)
+                        draw.line([x1, y1, x2, y2], fill=color, width=thickness)
+                
+                # 添加一些模糊和纹理
+                img = img.filter(ImageFilter.GaussianBlur(radius=2))
+                
+                # 增加对比度
+                enhancer = ImageEnhance.Contrast(img)
+                img = enhancer.enhance(1.3)
+            
+            # 应用一些最终处理
+            # 添加轻微的噪点
+            noise = Image.effect_noise((width, height), 10)
+            img = Image.blend(img, noise.convert('RGB'), 0.05)
+            
+            # 增强色彩
+            enhancer = ImageEnhance.Color(img)
+            img = enhancer.enhance(1.2)
+            
+            # 保存结果
+            timestamp = int(time.time())
+            output_path = os.path.join(GENERATED_IMAGES_DIR, f"mock_{timestamp}_{seed}.png")
+            img.save(output_path)
+            
+            return output_path
         
-        elif style in ["水彩", "油画", "印象派"]:
-            # 创建渐变和笔触效果
-            for _ in range(100):
-                # 随机形状
-                center_x = np.random.randint(0, width)
-                center_y = np.random.randint(0, height)
-                size = np.random.randint(width//20, width//4)
-                color = random.choice(colors)
+        except Exception as e:
+            print(f"模拟图像生成错误: {e}")
+            
+            # 如果PIL增强功能失败，回退到最基本的生成
+            try:
+                # 创建一个随机颜色的基础图像
+                img_array = np.zeros((height, width, 3), dtype=np.uint8)
                 
-                # 画一个柔和的圆形区域
-                y, x = np.ogrid[-center_y:height-center_y, -center_x:width-center_x]
-                mask = x*x + y*y <= size*size
-                img_array[mask] = color
-        
-        else:
-            # 默认：创建抽象渐变
-            for _ in range(20):
-                # 随机渐变
-                start_x = np.random.randint(0, width)
-                start_y = np.random.randint(0, height)
-                end_x = np.random.randint(0, width)
-                end_y = np.random.randint(0, height)
-                
-                color1 = random.choice(colors)
-                color2 = random.choice(colors)
-                
-                # 创建渐变
+                # 一个简单的图案
                 for y in range(height):
                     for x in range(width):
-                        # 计算当前点到起点和终点的距离比例
-                        d1 = np.sqrt((x - start_x)**2 + (y - start_y)**2)
-                        d2 = np.sqrt((x - end_x)**2 + (y - end_y)**2)
-                        
-                        # 混合颜色
-                        if d1 + d2 > 0:
-                            ratio = d1 / (d1 + d2)
-                            color = (
-                                int(color1[0] * (1 - ratio) + color2[0] * ratio),
-                                int(color1[1] * (1 - ratio) + color2[1] * ratio),
-                                int(color1[2] * (1 - ratio) + color2[2] * ratio)
-                            )
-                            
-                            # 与现有颜色混合
-                            img_array[y, x] = (img_array[y, x] * 0.7 + np.array(color) * 0.3).astype(np.uint8)
-        
-        # 转换为PIL图像
-        img = Image.fromarray(img_array)
-        
-        # 添加一些文本说明
-        timestamp = int(time.time())
-        prompt_short = prompt[:30] + "..." if len(prompt) > 30 else prompt
-        output_path = os.path.join(GENERATED_IMAGES_DIR, f"mock_{timestamp}_{seed}.png")
-        
-        # 保存图像
-        img.save(output_path)
-        
-        return output_path
+                        color_idx = (x * y) % len(colors)
+                        img_array[y, x] = colors[color_idx]
+                
+                img = Image.fromarray(img_array)
+                
+                # 保存结果
+                timestamp = int(time.time())
+                output_path = os.path.join(GENERATED_IMAGES_DIR, f"basic_mock_{timestamp}_{seed}.png")
+                img.save(output_path)
+                
+                return output_path
+            except Exception as inner_e:
+                print(f"基本图像生成也失败了: {inner_e}")
+                raise
     
     def _mock_image_variation(self, image_path, variation_strength):
         """
@@ -468,19 +692,37 @@ def enhance_prompt(prompt, style=None, extra_details=None):
 # 获取可用的图像风格
 def get_available_styles():
     """
-    获取所有可用的图像风格
+    获取可用的图像风格列表
     
     返回:
-        dict: 风格名称及描述
+        dict: 风格名称及其描述
     """
     return IMAGE_STYLES
 
 # 获取图像质量选项
 def get_quality_options():
     """
-    获取图像质量选项
+    获取可用的图像质量选项
     
     返回:
         dict: 质量选项
     """
-    return IMAGE_QUALITY 
+    return IMAGE_QUALITY
+
+def get_aspect_ratios():
+    """
+    获取可用的图像比例选项
+    
+    返回:
+        dict: 比例选项
+    """
+    return IMAGE_ASPECT_RATIOS
+
+def get_prompt_enhancers():
+    """
+    获取可用的提示词增强器列表
+    
+    返回:
+        dict: 增强器名称及其描述
+    """
+    return PROMPT_ENHANCERS 

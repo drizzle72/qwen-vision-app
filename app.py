@@ -17,7 +17,10 @@ import json
 from qwen_api import QwenAPI, analyze_description, TASK_TYPES, parse_qwen_response
 from food_calories import get_food_calories, get_similar_foods
 from product_search import generate_purchase_links, is_likely_product
-from image_generator import ImageGenerator, get_available_styles, get_quality_options, enhance_prompt
+from image_generator import (
+    ImageGenerator, get_available_styles, get_quality_options, enhance_prompt,
+    get_aspect_ratios, get_prompt_enhancers
+)
 
 # 加载环境变量
 load_dotenv()
@@ -496,6 +499,91 @@ def main():
                     key="text_prompt"
                 )
                 
+                # 提示词辅助器
+                with st.expander("✨ 提示词辅助生成", expanded=False):
+                    st.write("### 提示词增强")
+                    st.write("选择下列增强器，让AI生成更精美的图像")
+                    
+                    # 获取可用的提示词增强器
+                    enhancers = get_prompt_enhancers()
+                    enhancer_names = list(enhancers.keys())
+                    
+                    # 创建多列布局显示增强器选项
+                    enhancer_cols = st.columns(3)
+                    selected_enhancers = []
+                    
+                    for i, enhancer_name in enumerate(enhancer_names):
+                        col_idx = i % 3
+                        with enhancer_cols[col_idx]:
+                            if st.checkbox(enhancer_name, key=f"enhancer_{enhancer_name}"):
+                                selected_enhancers.append(enhancer_name)
+                                
+                    if selected_enhancers:
+                        st.success(f"已选择 {len(selected_enhancers)} 个增强器")
+                        
+                        # 显示增强后的提示词预览
+                        preview_prompt = text_prompt
+                        for enhancer in selected_enhancers:
+                            preview_prompt += f", {enhancers[enhancer]}"
+                        
+                        st.write("**增强后的提示词预览:**")
+                        st.code(preview_prompt)
+                    else:
+                        st.info("选择一些增强器来改进生成效果")
+                
+                # 选择图像比例和尺寸
+                st.write("### 图像尺寸与比例")
+                
+                # 获取可用的比例选项
+                aspect_ratios = get_aspect_ratios()
+                ratio_options = list(aspect_ratios.keys())
+                
+                # 图像比例选择
+                aspect_col1, aspect_col2 = st.columns([3, 2])
+                
+                with aspect_col1:
+                    selected_ratio = st.select_slider(
+                        "选择图像比例",
+                        options=ratio_options,
+                        value="1:1 方形"
+                    )
+                
+                with aspect_col2:
+                    # 显示所选比例的说明
+                    if selected_ratio in aspect_ratios:
+                        st.info(aspect_ratios[selected_ratio]["description"])
+                        
+                        # 显示比例示意图
+                        ratio_info = aspect_ratios[selected_ratio]
+                        width_ratio = ratio_info["width_ratio"]
+                        height_ratio = ratio_info["height_ratio"]
+                        
+                        # 计算示例框的大小，确保适合显示
+                        scale = 100 / max(width_ratio, height_ratio)
+                        display_width = int(width_ratio * scale)
+                        display_height = int(height_ratio * scale)
+                        
+                        # 创建一个彩色块表示比例
+                        st.markdown(
+                            f"""
+                            <div style="
+                                width: {display_width}px; 
+                                height: {display_height}px; 
+                                background-color: var(--primary-color); 
+                                margin: 10px auto;
+                                border-radius: 5px;
+                                display: flex;
+                                align-items: center;
+                                justify-content: center;
+                                color: white;
+                                font-weight: bold;
+                            ">
+                            {selected_ratio}
+                            </div>
+                            """, 
+                            unsafe_allow_html=True
+                        )
+                
                 # 选择图像风格
                 styles = get_available_styles()
                 style_names = list(styles.keys())
@@ -571,6 +659,46 @@ def main():
                         seed = None
                         
                     use_mock = st.checkbox("使用模拟模式 (不调用外部API)", value=False, key="use_mock")
+                
+                # 图像历史记录
+                with st.expander("图像历史记录", expanded=False):
+                    st.write("### 已生成的图像")
+                    
+                    # 初始化会话状态以存储生成的图像历史
+                    if "image_history" not in st.session_state:
+                        st.session_state["image_history"] = []
+                    
+                    if not st.session_state["image_history"]:
+                        st.info("暂无历史记录。生成新图像后将显示在这里。")
+                    else:
+                        # 显示历史记录
+                        history_cols = st.columns(3)
+                        
+                        for i, hist_item in enumerate(st.session_state["image_history"]):
+                            col_idx = i % 3
+                            with history_cols[col_idx]:
+                                if os.path.exists(hist_item["path"]):
+                                    st.image(hist_item["path"], caption=hist_item["prompt"][:20] + "...", use_container_width=True)
+                                    
+                                    # 添加重用按钮
+                                    if st.button(f"重用设置", key=f"reuse_{i}"):
+                                        st.session_state["text_prompt"] = hist_item["prompt"]
+                                        if "style" in hist_item:
+                                            # 找到对应的风格区域并设置
+                                            style_name = hist_item["style"]
+                                            if style_name in style_names[:5]:
+                                                st.session_state["last_used_style_section"] = "basic"
+                                            elif style_name in style_names[5:10]:
+                                                st.session_state["last_used_style_section"] = "art"
+                                            else:
+                                                st.session_state["last_used_style_section"] = "special"
+                                        st.experimental_rerun()
+                        
+                        # 清除历史记录按钮
+                        if st.button("清除历史记录"):
+                            st.session_state["image_history"] = []
+                            st.success("历史记录已清除")
+                            st.experimental_rerun()
                 
                 # 生成按钮
                 generate_text_button = st.button("生成图像", key="generate_text_button", disabled=not text_prompt)
@@ -851,9 +979,17 @@ def main():
                 else:
                     style = selected_style
                 
+                # 获取其他参数
                 quality = st.session_state.get("selected_quality", "标准")
+                aspect_ratio = selected_ratio
                 negative_prompt = st.session_state.get("negative_prompt")
                 use_mock = st.session_state.get("use_mock", False)
+                
+                # 获取选择的增强器
+                selected_enhancers = []
+                for enhancer_name in get_prompt_enhancers().keys():
+                    if st.session_state.get(f"enhancer_{enhancer_name}", False):
+                        selected_enhancers.append(enhancer_name)
                 
                 # 使用随机种子或指定种子
                 if st.session_state.get("use_random_seed", True):
@@ -870,8 +1006,10 @@ def main():
                         prompt=prompt,
                         style=style,
                         quality=quality,
+                        aspect_ratio=aspect_ratio,
                         negative_prompt=negative_prompt,
                         seed=seed,
+                        enhancers=selected_enhancers,
                         use_mock=use_mock
                     )
                     
@@ -895,15 +1033,54 @@ def main():
                                 file_name=os.path.basename(generated_image_path),
                                 mime="image/png"
                             )
+                        
+                        # 添加到历史记录
+                        history_item = {
+                            "path": generated_image_path,
+                            "prompt": prompt,
+                            "style": style,
+                            "quality": quality,
+                            "aspect_ratio": aspect_ratio,
+                            "timestamp": time.time()
+                        }
+                        
+                        # 将新生成的图像添加到历史记录的开头
+                        st.session_state["image_history"].insert(0, history_item)
+                        
+                        # 限制历史记录数量，最多保留10条
+                        if len(st.session_state["image_history"]) > 10:
+                            # 删除最旧的记录，但保留文件
+                            st.session_state["image_history"] = st.session_state["image_history"][:10]
                             
                         # 显示使用的提示词
                         with st.expander("查看提示词"):
+                            # 显示原始提示词
+                            st.write("**原始提示词:**")
+                            st.write(prompt)
+                            
+                            # 显示增强后的提示词
                             enhanced_prompt = enhance_prompt(prompt, style)
                             st.write("**增强后的提示词:**")
                             st.write(enhanced_prompt)
+                            
+                            # 显示应用的增强器
+                            if selected_enhancers:
+                                st.write("**应用的增强器:**")
+                                for enhancer in selected_enhancers:
+                                    st.write(f"- {enhancer}")
+                            
+                            # 显示负面提示词
                             if negative_prompt:
                                 st.write("**负面提示词:**")
                                 st.write(negative_prompt)
+                                
+                            # 显示其他参数
+                            st.write("**其他参数:**")
+                            st.write(f"- 风格: {style}")
+                            st.write(f"- 质量: {quality}")
+                            st.write(f"- 比例: {aspect_ratio}")
+                            if seed:
+                                st.write(f"- 种子: {seed}")
                     else:
                         st.error("图像生成失败，请重试。")
                 
