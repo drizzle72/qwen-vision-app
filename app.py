@@ -22,104 +22,245 @@ from image_generator import ImageGenerator, get_available_styles, get_quality_op
 # 加载环境变量
 load_dotenv()
 
-# 设置页面配置
-st.set_page_config(
-    page_title="通义千问视觉智能助手",
-    page_icon="🧠",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
+# 定义可用的主题
+THEMES = {
+    "默认蓝": {"primary_color": "#1E88E5", "background_color": "#FFFFFF", "text_color": "#424242", "font": "sans serif"},
+    "暗夜模式": {"primary_color": "#BB86FC", "background_color": "#121212", "text_color": "#E0E0E0", "font": "sans serif"},
+    "森林绿": {"primary_color": "#4CAF50", "background_color": "#F5F9F5", "text_color": "#2E4632", "font": "sans serif"},
+    "橙色暖阳": {"primary_color": "#FF9800", "background_color": "#FFF9EF", "text_color": "#5D4037", "font": "sans serif"},
+    "樱花粉": {"primary_color": "#EC407A", "background_color": "#FFF0F4", "text_color": "#880E4F", "font": "sans serif"}
+}
 
-# 使用CSS美化界面
-st.markdown("""
-<style>
-    .main-title {
-        font-size: 2.5rem !important;
-        color: #1E88E5;
-        text-align: center;
-        margin-bottom: 1rem;
-    }
-    .subtitle {
-        font-size: 1.2rem !important;
-        color: #424242;
-        text-align: center;
-        margin-bottom: 2rem;
-    }
-    .task-header {
-        font-size: 1.5rem !important;
-        color: #1976D2;
-        margin-top: 1rem;
-        margin-bottom: 1rem;
-    }
-    .stButton>button {
-        background-color: #1976D2;
-        color: white;
-        border-radius: 5px;
-        padding: 0.5rem 1rem;
-        font-size: 1rem;
-    }
-    .result-box {
-        background-color: #f5f5f5;
-        padding: 1.5rem;
-        border-radius: 10px;
-        margin-top: 1rem;
-        margin-bottom: 1rem;
-        border-left: 5px solid #1976D2;
-    }
-    .essay-content {
-        font-size: 1.1rem;
-        line-height: 1.8;
-        text-indent: 2em;
-        white-space: pre-wrap;
-    }
-    .problem-solution {
-        font-size: 1.1rem;
-        line-height: 1.8;
-        white-space: pre-wrap;
-    }
-    .food-section {
-        background-color: #E3F2FD;
-        padding: 1rem;
-        border-radius: 10px;
-        margin-top: 0.5rem;
-    }
-    .product-section {
-        background-color: #E8F5E9;
-        padding: 1rem;
-        border-radius: 10px;
-        margin-top: 0.5rem;
-    }
-    .creative-section {
-        background-color: #FFF3E0;
-        padding: 1rem;
-        border-radius: 10px;
-        margin-top: 0.5rem;
-    }
-    .generated-image {
-        margin-top: 1rem;
-        margin-bottom: 1rem;
-        text-align: center;
-        max-width: 100%;
-    }
-    .style-option {
-        margin-right: 10px;
-        margin-bottom: 10px;
-        display: inline-block;
-    }
-    .info-box {
-        background-color: #E8F5E9;
-        padding: 1rem;
-        border-radius: 5px;
-        margin-bottom: 1rem;
-    }
-    .warning-box {
-        background-color: #FFF3E0;
-        padding: 1rem;
-        border-radius: 5px;
-        margin-bottom: 1rem;
-    }
-</style>
-""", unsafe_allow_html=True)
+# 定义可用的字体
+FONTS = {
+    "默认字体": "sans serif",
+    "优雅衬线": "serif",
+    "等宽代码": "monospace", 
+    "圆润现代": "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif",
+    "简约无衬线": "'Helvetica Neue', Helvetica, Arial, sans-serif"
+}
+
+# 设置页面配置
+def set_page_config():
+    # 从会话状态获取当前主题
+    current_theme = st.session_state.get("theme", "默认蓝")
+    theme_config = THEMES[current_theme]
+    
+    st.set_page_config(
+        page_title="通义千问视觉智能助手",
+        page_icon="🧠",
+        layout="wide",
+        initial_sidebar_state="expanded",
+        menu_items={
+            'About': "# 通义千问视觉智能助手\n由通义千问视觉语言模型驱动的多功能AI助手"
+        }
+    )
+    
+    # 应用主题样式
+    st.markdown(
+        f"""
+        <style>
+            :root {{
+                --primary-color: {theme_config["primary_color"]};
+                --background-color: {theme_config["background_color"]};
+                --text-color: {theme_config["text_color"]};
+                --font-family: {theme_config["font"]};
+            }}
+            
+            .stApp {{
+                background-color: var(--background-color);
+                color: var(--text-color);
+                font-family: var(--font-family);
+            }}
+            
+            .stButton>button {{
+                background-color: var(--primary-color);
+                color: white;
+                border-radius: 5px;
+                padding: 0.5rem 1rem;
+                font-size: 1rem;
+                border: none;
+            }}
+            
+            .stTextInput>div>div>input {{
+                color: var(--text-color);
+            }}
+            
+            h1, h2, h3, h4, h5, h6 {{
+                color: var(--primary-color);
+                font-family: var(--font-family);
+            }}
+            
+            .main-title {{
+                font-size: 2.5rem !important;
+                color: var(--primary-color);
+                text-align: center;
+                margin-bottom: 1rem;
+                font-family: var(--font-family);
+            }}
+            
+            .subtitle {{
+                font-size: 1.2rem !important;
+                color: var(--text-color);
+                text-align: center;
+                margin-bottom: 2rem;
+                font-family: var(--font-family);
+            }}
+            
+            .task-header {{
+                font-size: 1.5rem !important;
+                color: var(--primary-color);
+                margin-top: 1rem;
+                margin-bottom: 1rem;
+                font-family: var(--font-family);
+            }}
+            
+            .result-box {{
+                background-color: {theme_config["background_color"] if current_theme == "默认蓝" else "#f5f5f5"};
+                padding: 1.5rem;
+                border-radius: 10px;
+                margin-top: 1rem;
+                margin-bottom: 1rem;
+                border-left: 5px solid var(--primary-color);
+            }}
+            
+            .essay-content {{
+                font-size: 1.1rem;
+                line-height: 1.8;
+                text-indent: 2em;
+                white-space: pre-wrap;
+                font-family: var(--font-family);
+            }}
+            
+            .problem-solution {{
+                font-size: 1.1rem;
+                line-height: 1.8;
+                white-space: pre-wrap;
+                font-family: var(--font-family);
+            }}
+            
+            .food-section {{
+                background-color: {theme_config["primary_color"] + "20"};
+                padding: 1rem;
+                border-radius: 10px;
+                margin-top: 0.5rem;
+            }}
+            
+            .product-section {{
+                background-color: {theme_config["primary_color"] + "15"};
+                padding: 1rem;
+                border-radius: 10px;
+                margin-top: 0.5rem;
+            }}
+            
+            .creative-section {{
+                background-color: {theme_config["primary_color"] + "10"};
+                padding: 1rem;
+                border-radius: 10px;
+                margin-top: 0.5rem;
+            }}
+            
+            .generated-image {{
+                margin-top: 1rem;
+                margin-bottom: 1rem;
+                text-align: center;
+                max-width: 100%;
+            }}
+            
+            .style-option {{
+                margin-right: 10px;
+                margin-bottom: 10px;
+                display: inline-block;
+            }}
+            
+            .info-box {{
+                background-color: {theme_config["primary_color"] + "20"};
+                padding: 1rem;
+                border-radius: 5px;
+                margin-bottom: 1rem;
+            }}
+            
+            .warning-box {{
+                background-color: #FFF3E0;
+                padding: 1rem;
+                border-radius: 5px;
+                margin-bottom: 1rem;
+            }}
+            
+            .theme-selector {{
+                background-color: {theme_config["background_color"]};
+                padding: 10px;
+                border-radius: 10px;
+                margin-bottom: 20px;
+                border: 1px solid {theme_config["primary_color"] + "40"};
+            }}
+            
+            .theme-option {{
+                cursor: pointer;
+                padding: 8px;
+                border-radius: 5px;
+                display: inline-block;
+                margin-right: 10px;
+                margin-bottom: 5px;
+            }}
+            
+            /* 联系作者相关样式 */
+            .contact-container {{
+                background-color: {theme_config["background_color"]};
+                border: 1px solid {theme_config["primary_color"] + "40"};
+                border-radius: 10px;
+                padding: 20px;
+                margin-top: 20px;
+                margin-bottom: 20px;
+                box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            }}
+            
+            .contact-header {{
+                color: {theme_config["primary_color"]};
+                border-bottom: 2px solid {theme_config["primary_color"] + "40"};
+                padding-bottom: 10px;
+                margin-bottom: 15px;
+            }}
+            
+            .contact-form {{
+                background-color: {theme_config["background_color"]};
+                padding: 15px;
+                border-radius: 8px;
+                border: 1px solid {theme_config["primary_color"] + "20"};
+            }}
+            
+            .footer {{
+                position: fixed;
+                bottom: 0;
+                left: 0;
+                right: 0;
+                background-color: {theme_config["background_color"]};
+                color: {theme_config["text_color"]};
+                padding: 10px;
+                text-align: center;
+                font-size: 0.8rem;
+                border-top: 1px solid {theme_config["primary_color"] + "20"};
+                z-index: 1000;
+            }}
+            
+            .footer a {{
+                color: {theme_config["primary_color"]};
+                text-decoration: none;
+            }}
+            
+            .footer a:hover {{
+                text-decoration: underline;
+            }}
+            
+            /* 暗模式适配 */
+            {
+                ".stMarkdown, .stText, p, li {color: " + theme_config["text_color"] + ";}" 
+                if current_theme == "暗夜模式" else ""
+            }
+        </style>
+        """, 
+        unsafe_allow_html=True
+    )
 
 def save_text_as_file(text, filename):
     """保存文本为文件"""
@@ -173,9 +314,113 @@ def handle_api_response(response_data, default_message="无法解析响应"):
         return default_message
 
 def main():
+    # 应用页面配置和主题
+    set_page_config()
+    
     # 标题和介绍
     st.markdown('<h1 class="main-title">通义千问视觉智能助手</h1>', unsafe_allow_html=True)
     st.markdown('<p class="subtitle">基于通义千问视觉语言模型的多功能AI助手，支持图像分析、作文生成、解题辅助和AI绘画</p>', unsafe_allow_html=True)
+    
+    # 在标题下方添加一个小型联系入口
+    with st.container():
+        cols = st.columns([5, 1])
+        with cols[1]:
+            if st.button("📞 联系作者", key="contact_button"):
+                st.session_state["show_contact"] = True
+    
+    # 添加主题选择器
+    with st.expander("🎨 应用主题设置", expanded=False):
+        st.write("### 主题设置")
+        theme_cols = st.columns(len(THEMES))
+        
+        # 初始化会话状态
+        if "theme" not in st.session_state:
+            st.session_state.theme = "默认蓝"
+        
+        if "font" not in st.session_state:
+            st.session_state.font = "默认字体"
+        
+        # 显示主题选项
+        for i, (theme_name, theme_config) in enumerate(THEMES.items()):
+            with theme_cols[i]:
+                # 创建主题样式预览
+                st.markdown(
+                    f"""
+                    <div style="background-color: {theme_config['background_color']}; 
+                                padding: 10px; 
+                                border-radius: 5px;
+                                border: 2px solid {theme_config['primary_color'] if theme_name == st.session_state.theme else 'transparent'};
+                                text-align: center;
+                                cursor: pointer;" 
+                         onclick="this.style.border='2px solid {theme_config['primary_color']}'">
+                        <h4 style="color: {theme_config['primary_color']}; margin: 5px 0;">{theme_name}</h4>
+                        <div style="background-color: {theme_config['primary_color']}; height: 15px; margin: 5px 0;"></div>
+                        <p style="color: {theme_config['text_color']}; margin: 5px 0;">示例文本</p>
+                    </div>
+                    """, 
+                    unsafe_allow_html=True
+                )
+                
+                # 使用按钮选择主题
+                if st.button(f"选择 {theme_name}", key=f"theme_{theme_name}"):
+                    st.session_state.theme = theme_name
+                    st.experimental_rerun()
+        
+        # 字体选择
+        st.write("### 字体设置")
+        selected_font = st.selectbox(
+            "选择字体风格",
+            options=list(FONTS.keys()),
+            index=list(FONTS.keys()).index(st.session_state.get("font", "默认字体")),
+            key="font_selector"
+        )
+        
+        # 如果字体被改变
+        if selected_font != st.session_state.get("font"):
+            st.session_state.font = selected_font
+            # 更新当前主题的字体
+            current_theme = st.session_state.get("theme", "默认蓝")
+            THEMES[current_theme]["font"] = FONTS[selected_font]
+            st.experimental_rerun()
+        
+        # 自定义主题
+        st.write("### 创建自定义主题")
+        with st.form("custom_theme_form"):
+            custom_theme_name = st.text_input("主题名称", value="我的主题")
+            
+            # 颜色选择器
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                primary_color = st.color_picker("主色调", value="#1E88E5")
+            with col2:
+                background_color = st.color_picker("背景色", value="#FFFFFF")
+            with col3:
+                text_color = st.color_picker("文字颜色", value="#424242")
+                
+            # 提交按钮
+            submitted = st.form_submit_button("创建并应用")
+            if submitted:
+                # 确保自定义主题名称不与现有主题冲突
+                if custom_theme_name in THEMES and not custom_theme_name.startswith("自定义"):
+                    custom_theme_name = "自定义" + custom_theme_name
+                
+                # 添加或更新自定义主题
+                THEMES[custom_theme_name] = {
+                    "primary_color": primary_color,
+                    "background_color": background_color,
+                    "text_color": text_color,
+                    "font": FONTS[st.session_state.get("font", "默认字体")]
+                }
+                
+                # 设置当前主题为自定义主题
+                st.session_state.theme = custom_theme_name
+                st.experimental_rerun()
+        
+        # 重置按钮
+        if st.button("重置为默认主题"):
+            st.session_state.theme = "默认蓝"
+            st.session_state.font = "默认字体"
+            st.experimental_rerun()
     
     # 创建侧边栏选择功能区
     with st.sidebar:
@@ -341,6 +586,21 @@ def main():
                 
                 # 生成按钮
                 generate_variation_button = st.button("生成变体", key="generate_variation_button", disabled=variation_file is None)
+        
+        # 侧边栏底部添加联系作者入口
+        st.markdown("---")
+        st.markdown("### 关于")
+        if st.button("📞 联系作者", key="contact_sidebar"):
+            st.session_state["show_contact"] = True
+            st.experimental_rerun()
+        
+        if st.button("💫 支持项目", key="support_project"):
+            st.balloons()
+            st.success("感谢您的支持！")
+            
+        # 版本信息
+        st.markdown("**版本**: v1.0.0")
+        st.markdown("**更新时间**: 2023年12月")
             
     # 主界面
     if uploaded_file is not None:
@@ -765,6 +1025,98 @@ def main():
         - 通义千问API密钥: [阿里云通义平台](https://dashscope.aliyun.com/)
         - Stability AI API密钥: [Stability AI官网](https://stability.ai/)
         """)
+    
+    # 显示联系作者对话框
+    if st.session_state.get("show_contact", False):
+        with st.container():
+            st.markdown('<div class="contact-container">', unsafe_allow_html=True)
+            st.markdown('<h2 class="contact-header">📬 联系作者</h2>', unsafe_allow_html=True)
+            contact_cols = st.columns([2, 1])
+            
+            with contact_cols[0]:
+                st.markdown("""
+                ### 联系方式
+                - **邮箱**: 271578787@qq.com
+                - **微信**: mengmh1986
+                - **GitHub**: [GitHub主页](https://github.com/drizzle72)
+                - **博客**: [个人博客](https://yourblog.com)
+                
+                ### 关于作者
+                通义千问视觉智能助手由AI爱好者开发，致力于让先进的AI技术为更多人所用。欢迎交流与合作！
+                """)
+                
+                # 提交反馈的表单
+                st.markdown('<div class="contact-form">', unsafe_allow_html=True)
+                with st.form(key="feedback_form"):
+                    st.markdown("### 提交反馈")
+                    feedback_name = st.text_input("您的称呼（选填）")
+                    feedback_email = st.text_input("回复邮箱（选填）")
+                    feedback_type = st.selectbox(
+                        "反馈类型",
+                        options=["功能建议", "Bug报告", "使用问题", "其他"]
+                    )
+                    feedback_content = st.text_area("反馈内容", height=150)
+                    
+                    submit_feedback = st.form_submit_button("提交反馈")
+                    if submit_feedback and feedback_content:
+                        # 这里可以添加发送反馈的代码，比如发送邮件或保存到数据库
+                        # 现在只显示成功消息
+                        st.success("感谢您的反馈！我们会尽快处理。")
+                        
+                        # 可以添加保存反馈到本地文件的代码
+                        try:
+                            feedback_dir = "feedback"
+                            if not os.path.exists(feedback_dir):
+                                os.makedirs(feedback_dir)
+                                
+                            feedback_time = time.strftime("%Y%m%d-%H%M%S")
+                            feedback_file = f"{feedback_dir}/feedback_{feedback_time}.txt"
+                            
+                            with open(feedback_file, "w", encoding="utf-8") as f:
+                                f.write(f"时间: {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
+                                f.write(f"姓名: {feedback_name}\n")
+                                f.write(f"邮箱: {feedback_email}\n")
+                                f.write(f"类型: {feedback_type}\n")
+                                f.write(f"内容:\n{feedback_content}\n")
+                                
+                            st.info(f"反馈已保存到 {feedback_file}")
+                        except Exception as e:
+                            st.warning(f"保存反馈时出错: {str(e)}")
+                st.markdown('</div>', unsafe_allow_html=True)
+            
+            with contact_cols[1]:
+                # 添加二维码或头像图片
+                st.markdown("### 扫码联系")
+                st.markdown("![联系二维码](https://via.placeholder.com/200x200?text=扫码联系)")
+                
+                # 关闭按钮
+                if st.button("关闭", key="close_contact"):
+                    st.session_state["show_contact"] = False
+                    st.experimental_rerun()
+            st.markdown('</div>', unsafe_allow_html=True)
+    
+    # 添加页脚
+    st.markdown("""
+    <div class="footer">
+        <p>© 2025 通义千问视觉智能助手 | 
+           <a href="javascript:void(0);" onclick="document.dispatchEvent(new CustomEvent('contact_author'))">联系作者</a> | 
+           <a href="https://github.com/drizzle72/qwen-vision-app" target="_blank">GitHub</a> | 
+           <a href="https://dashscope.aliyun.com/" target="_blank">通义千问API</a>
+        </p>
+    </div>
+    
+    <script>
+        document.addEventListener('contact_author', function() {
+            // 通过按钮点击事件触发联系作者
+            const contactBtn = document.querySelector('button[data-testid="baseButton-secondary"]');
+            if (contactBtn) contactBtn.click();
+        });
+    </script>
+    """, unsafe_allow_html=True)
                 
 if __name__ == "__main__":
-    main() 
+    try:
+        main()
+    except Exception as e:
+        st.error(f"应用程序发生错误: {str(e)}")
+        st.exception(e) 
