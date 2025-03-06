@@ -10,19 +10,12 @@ import time
 from PIL import Image
 import streamlit as st
 from dotenv import load_dotenv
+import textwrap
 
 # 导入自定义模块
-from qwen_api import QwenAPI, analyze_description
+from qwen_api import QwenAPI, analyze_description, TASK_TYPES
 from food_calories import get_food_calories, get_similar_foods
 from product_search import generate_purchase_links, is_likely_product
-from cartoon_generator import (
-    get_cartoon_image, 
-    get_available_styles, 
-    get_available_effects,
-    generate_multiple_styles, 
-    CARTOON_STYLES, 
-    CARTOON_EFFECTS
-)
 
 # 加载环境变量
 load_dotenv()
@@ -56,44 +49,52 @@ st.markdown("""
         border-radius: 10px;
         margin-bottom: 1rem;
     }
-    .info-text {
-        color: #666;
-        font-size: 0.9rem;
-    }
-    .highlight {
+    .essay-box {
         background-color: #E3F2FD;
-        padding: 0.2rem 0.5rem;
-        border-radius: 3px;
-        font-weight: bold;
+        padding: 1.5rem;
+        border-radius: 10px;
+        margin-bottom: 1rem;
+        border-left: 5px solid #1976D2;
+    }
+    .problem-box {
+        background-color: #E8F5E9;
+        padding: 1.5rem;
+        border-radius: 10px;
+        margin-bottom: 1rem;
+        border-left: 5px solid #388E3C;
+    }
+    .creative-box {
+        background-color: #FFF8E1;
+        padding: 1.5rem;
+        border-radius: 10px;
+        margin-bottom: 1rem;
+        border-left: 5px solid #FFA000;
     }
     .footer {
-        text-align: center;
-        color: #666;
         font-size: 0.8rem;
+        color: #757575;
+        text-align: center;
         margin-top: 3rem;
     }
-    .purchase-btn {
-        background-color: #4CAF50;
-        color: white;
-        padding: 0.5rem 1rem;
-        text-align: center;
-        text-decoration: none;
-        display: inline-block;
+    .highlight {
+        background-color: #FFF9C4;
+        padding: 0.2rem 0.5rem;
         border-radius: 4px;
-        margin: 0.25rem;
     }
 </style>
-""", unsafe_allow_html=True)
+""")
 
 def main():
     # 标题和介绍
     st.markdown('<h1 class="main-header">通义千问视觉语言模型智能识别助手</h1>', unsafe_allow_html=True)
     st.markdown("""
-    此应用使用通义千问视觉语言模型(Qwen-VL)来识别图片内容，并提供相关信息。
-    * 上传一张图片进行识别
-    * 获取食物热量信息（如果是食物）
-    * 找到相似产品和购买链接（如果是商品）
-    * 生成多种风格的卡通图像
+    此应用使用通义千问视觉语言模型(Qwen-VL)来识别图片内容，并提供多种智能分析功能：
+    * 📸 **图像识别**：详细描述图片内容
+    * 📝 **看图写作文**：根据图片自动生成精彩作文
+    * 🧮 **看图解题**：分析并解答图中的题目
+    * 🍔 **食物热量查询**：识别食物并提供营养信息
+    * 🛒 **商品信息查询**：识别商品并提供购买链接
+    * 📚 **创意内容生成**：根据图片创作故事、诗歌或科普文章
     """)
     
     # 侧边栏配置
@@ -107,56 +108,51 @@ def main():
         # 使用模拟数据的选项
         use_mock = st.checkbox("使用模拟数据 (无需API)")
         
-        # 卡通图像生成选项
+        # 任务类型选择
         st.markdown("---")
-        st.subheader("卡通图像设置")
+        st.subheader("任务类型")
         
-        # 选择卡通图像生成模式
-        cartoon_mode = st.radio(
-            "卡通图像生成模式",
-            ["简单匹配", "AI生成", "多样风格"]
-        )
+        task_types = ["识别", "作文", "解题", "故事", "诗歌", "科普"]
+        selected_tasks = []
         
-        # 如果选择AI生成，显示风格选择
-        if cartoon_mode == "AI生成":
-            cartoon_style = st.selectbox(
-                "选择卡通风格",
-                CARTOON_STYLES,
-                format_func=lambda x: x.replace("_", " ").title()
-            )
+        # 使用两列布局展示任务选择
+        col1, col2 = st.columns(2)
+        with col1:
+            selected_tasks.append("识别") if st.checkbox("图像识别", value=True, key="task_recognition") else None
+            selected_tasks.append("作文") if st.checkbox("看图写作文", value=True, key="task_essay") else None
+            selected_tasks.append("故事") if st.checkbox("看图写故事", key="task_story") else None
             
-            cartoon_effect = st.selectbox(
-                "选择卡通效果",
-                CARTOON_EFFECTS,
-                format_func=lambda x: x.replace("_", " ").title()
-            )
+        with col2:
+            selected_tasks.append("解题") if st.checkbox("看图解题", key="task_problem") else None
+            selected_tasks.append("诗歌") if st.checkbox("看图作诗", key="task_poem") else None
+            selected_tasks.append("科普") if st.checkbox("图片科普", key="task_science") else None
+        
+        # 高级选项
+        st.markdown("---")
+        with st.expander("高级选项"):
+            # 自定义提示
+            use_custom_prompts = st.checkbox("使用自定义提示", key="use_custom_prompts")
             
-        # 如果选择多样风格，显示高级选项
-        elif cartoon_mode == "多样风格":
-            st.write("将生成多种不同风格的卡通图像")
+            custom_prompts = {}
+            if use_custom_prompts:
+                for task in selected_tasks:
+                    if task in TASK_TYPES:
+                        default_prompt = TASK_TYPES[task]
+                        # 将长文本截断以适合输入框
+                        shortened_prompt = textwrap.shorten(default_prompt, width=50, placeholder="...")
+                        custom_prompts[task] = st.text_area(
+                            f"自定义{task}提示", 
+                            value=default_prompt,
+                            key=f"custom_prompt_{task}",
+                            help=f"默认提示: {shortened_prompt}"
+                        )
             
-            # 风格多选
-            cartoon_styles = st.multiselect(
-                "选择多种卡通风格（最多3种）",
-                CARTOON_STYLES,
-                default=CARTOON_STYLES[:3] if len(CARTOON_STYLES) >= 3 else CARTOON_STYLES,
-                format_func=lambda x: x.replace("_", " ").title(),
-                max_selections=3
+            # 模型选择（未来可以添加更多模型）
+            model_option = st.selectbox(
+                "选择模型",
+                ["qwen-vl-plus"],
+                format_func=lambda x: "通义千问VL-Plus（推荐）" if x == "qwen-vl-plus" else x
             )
-            
-            # 效果多选
-            cartoon_effects = st.multiselect(
-                "选择多种卡通效果（最多2种）",
-                CARTOON_EFFECTS,
-                default=["normal"],
-                format_func=lambda x: x.replace("_", " ").title(),
-                max_selections=2
-            )
-        else:
-            cartoon_style = None
-            cartoon_effect = "normal"
-            cartoon_styles = None
-            cartoon_effects = None
         
         st.markdown("---")
         
@@ -167,6 +163,8 @@ def main():
         
         此应用可以：
         * 识别图片内容
+        * 生成作文和故事
+        * 解答数学、物理等题目
         * 提供食物热量信息
         * 推荐相似产品和购买链接
         """)
@@ -181,7 +179,7 @@ def main():
     with example_col2:
         use_example_product = st.button("使用商品示例图片")
     with example_col3:
-        use_example_other = st.button("使用其他示例图片")
+        use_example_other = st.button("使用题目示例图片")
     
     # 处理示例图片
     if use_example_food:
@@ -218,236 +216,185 @@ def main():
             st.error(f"无法处理上传的图片: {e}")
             return
         
-        # 进度条
-        with st.spinner("AI正在识别图片内容..."):
+        # 初始化API客户端
+        try:
+            api_client = QwenAPI(api_key=api_key if api_key else None)
+        except Exception as e:
+            st.error(f"初始化API客户端失败: {e}")
+            if not api_key and not use_mock:
+                st.warning("请提供API密钥或选择使用模拟数据")
+            return
+        
+        # 处理每个选定的任务
+        results = {}
+        
+        with st.spinner("AI正在分析图片..."):
             progress_bar = st.progress(0)
-            for i in range(100):
-                time.sleep(0.01)
-                progress_bar.progress(i + 1)
+            total_tasks = len(selected_tasks)
             
-            # 初始化API客户端
-            try:
-                api_client = QwenAPI(api_key=api_key if api_key else None)
+            # 执行所有选定的任务
+            for i, task in enumerate(selected_tasks):
+                task_label = f"正在{task}..."
+                progress_percent = (i / total_tasks) * 100
                 
-                # 获取图片描述
-                description = api_client.get_image_description(
-                    image_path=image_path,
-                    image_base64=image_base64,
-                    use_mock=use_mock
-                )
-            except Exception as e:
-                st.error(f"初始化API客户端失败: {e}")
-                if not api_key and not use_mock:
-                    st.warning("请提供API密钥或选择使用模拟数据")
-                return
-        
-        # 显示识别结果
-        st.markdown('<h2 class="sub-header">识别结果</h2>', unsafe_allow_html=True)
-        
-        with st.container():
-            st.markdown('<div class="result-box">', unsafe_allow_html=True)
-            st.subheader("Qwen-VL分析")
-            st.write(description)
-            st.markdown('</div>', unsafe_allow_html=True)
-            
-            # 分析描述，确定内容类型
-            content_type, content_name = analyze_description(description)
-            
-            # 根据内容类型提供不同的信息
-            if content_type == "food":
-                st.markdown('<h2 class="sub-header">食物热量信息</h2>', unsafe_allow_html=True)
+                # 更新进度条
+                progress_bar.progress(int(progress_percent))
+                st.text(task_label)
                 
-                # 获取食物热量信息
-                calories_info = get_food_calories(content_name)
+                # 根据任务类型调用不同的API方法
+                custom_prompt = custom_prompts.get(task) if use_custom_prompts and task in custom_prompts else None
                 
-                with st.container():
-                    st.markdown('<div class="result-box">', unsafe_allow_html=True)
-                    
-                    col1, col2 = st.columns([1, 2])
-                    with col1:
-                        st.subheader("食物名称")
-                        st.markdown(f'<p class="highlight">{content_name}</p>', unsafe_allow_html=True)
-                        
-                        if calories_info["热量"]:
-                            st.subheader("热量")
-                            st.markdown(f'<p class="highlight">{calories_info["热量"]} 千卡/100克</p>', unsafe_allow_html=True)
-                    
-                    with col2:
-                        st.subheader("详细信息")
-                        st.write(calories_info["描述"])
-                        
-                        # 如果没有找到精确热量，提供类似食物
-                        if not calories_info["热量"]:
-                            similar = get_similar_foods(content_name)
-                            if similar:
-                                st.subheader("类似食物")
-                                for food in similar[:5]:  # 最多显示5个类似食物
-                                    similar_calories = get_food_calories(food)
-                                    if similar_calories["热量"]:
-                                        st.write(f"- {food}: {similar_calories['热量']} 千卡/100克")
-                    
-                    st.markdown('</div>', unsafe_allow_html=True)
-                    
-                # 添加健康提示
-                st.info("📊 食物热量仅供参考，实际热量会因烹饪方式、配料和份量而异。")
-                
-            elif content_type == "product":
-                st.markdown('<h2 class="sub-header">商品购买信息</h2>', unsafe_allow_html=True)
-                
-                # 获取商品购买链接
-                product_info = generate_purchase_links(content_name)
-                
-                with st.container():
-                    st.markdown('<div class="result-box">', unsafe_allow_html=True)
-                    
-                    col1, col2 = st.columns([1, 2])
-                    with col1:
-                        st.subheader("商品名称")
-                        st.markdown(f'<p class="highlight">{product_info["商品名称"]}</p>', unsafe_allow_html=True)
-                    
-                    with col2:
-                        st.subheader("购买链接")
-                        for platform, link in product_info["购买链接"].items():
-                            st.markdown(f'<a href="{link}" target="_blank" class="purchase-btn">{platform}</a>', unsafe_allow_html=True)
-                    
-                    st.markdown('</div>', unsafe_allow_html=True)
-                    
-                # 添加购物提示
-                st.info("💡 购买链接基于识别结果自动生成，请在购买前确认商品信息和商家信用。")
-                
-            else:
-                st.markdown('<h2 class="sub-header">通用信息</h2>', unsafe_allow_html=True)
-                
-                with st.container():
-                    st.markdown('<div class="result-box">', unsafe_allow_html=True)
-                    st.write("这不是食物或商品，无法提供热量或购买信息。")
-                    
-                    # 尝试判断是否可能是商品
-                    if is_likely_product(description):
-                        st.write("不过，如果你想将其视为产品搜索，可以点击下方按钮：")
-                        if st.button("作为商品搜索"):
-                            product_info = generate_purchase_links(description[:30])
-                            
-                            st.subheader("商品搜索结果")
-                            for platform, link in product_info["购买链接"].items():
-                                st.markdown(f'<a href="{link}" target="_blank" class="purchase-btn">{platform}</a>', unsafe_allow_html=True)
-                    
-                    st.markdown('</div>', unsafe_allow_html=True)
-            
-            # 生成卡通图像
-            st.markdown('<h2 class="sub-header">卡通图像生成</h2>', unsafe_allow_html=True)
-            
-            with st.spinner("正在生成卡通图像..."):
-                # 根据设置选择卡通生成模式
-                if cartoon_mode == "AI生成":
-                    use_ai = True
-                    
-                    # 生成卡通图像
-                    cartoon_path = get_cartoon_image(
-                        image_path=image_path, 
-                        description=description,
-                        use_ai_generation=use_ai,
-                        style=cartoon_style,
-                        effect=cartoon_effect
-                    )
-                    
-                    if cartoon_path and os.path.exists(cartoon_path):
-                        # 显示卡通图像
-                        cartoon_image = Image.open(cartoon_path)
-                        st.image(cartoon_image, caption=f"风格: {cartoon_style.replace('_', ' ').title()}, 效果: {cartoon_effect.replace('_', ' ').title()}", use_column_width=True)
-                        
-                        # 提供下载链接
-                        with open(cartoon_path, "rb") as file:
-                            cartoon_bytes = file.read()
-                            
-                        st.download_button(
-                            label="下载卡通图像",
-                            data=cartoon_bytes,
-                            file_name=os.path.basename(cartoon_path),
-                            mime="image/jpeg"
-                        )
-                        
-                        st.info(f"使用{cartoon_style.replace('_', ' ').title()}风格和{cartoon_effect.replace('_', ' ').title()}效果生成")
-                    else:
-                        st.error("无法生成卡通图像，请尝试其他图片或选择其他生成模式")
-                
-                elif cartoon_mode == "多样风格":
-                    # 生成多种风格的卡通图像
-                    cartoon_paths = generate_multiple_styles(
+                if task == "识别":
+                    results[task] = api_client.get_image_description(
                         image_path=image_path,
-                        description=description,
-                        styles=cartoon_styles,
-                        effects=cartoon_effects
+                        image_base64=image_base64,
+                        use_mock=use_mock
                     )
-                    
-                    if cartoon_paths and len(cartoon_paths) > 0:
-                        # 创建多列布局显示多个卡通图像
-                        cols = st.columns(min(3, len(cartoon_paths)))
-                        
-                        for i, path in enumerate(cartoon_paths):
-                            if os.path.exists(path):
-                                with cols[i % len(cols)]:
-                                    # 从文件名解析风格和效果信息
-                                    filename = os.path.basename(path)
-                                    style_info = filename.split("_")[1]
-                                    effect_info = filename.split("_")[2] if len(filename.split("_")) > 2 else "normal"
-                                    
-                                    # 显示卡通图像
-                                    cartoon_image = Image.open(path)
-                                    st.image(cartoon_image, caption=f"{style_info.replace('_', ' ').title()}", use_column_width=True)
-                                    
-                                    # 提供下载链接
-                                    with open(path, "rb") as file:
-                                        cartoon_bytes = file.read()
-                                        
-                                    st.download_button(
-                                        label=f"下载 {style_info}",
-                                        data=cartoon_bytes,
-                                        file_name=os.path.basename(path),
-                                        mime="image/jpeg"
-                                    )
-                        
-                        st.success(f"成功生成 {len(cartoon_paths)} 种不同风格的卡通图像")
-                    else:
-                        st.error("生成多样风格卡通图像失败，请尝试其他图片或选择其他生成模式")
+                elif task == "作文":
+                    results[task] = api_client.generate_essay(
+                        image_path=image_path,
+                        image_base64=image_base64,
+                        custom_prompt=custom_prompt
+                    )
+                elif task == "解题":
+                    results[task] = api_client.solve_problem(
+                        image_path=image_path,
+                        image_base64=image_base64,
+                        custom_prompt=custom_prompt
+                    )
+                else:  # 故事、诗歌、科普
+                    results[task] = api_client.generate_creative_content(
+                        image_path=image_path,
+                        image_base64=image_base64,
+                        content_type=task,
+                        custom_prompt=custom_prompt
+                    )
+            
+            # 完成进度条
+            progress_bar.progress(100)
+        
+        # 根据任务类型显示结果
+        if "识别" in results:
+            description = results["识别"]
+            
+            st.markdown('<h2 class="sub-header">识别结果</h2>', unsafe_allow_html=True)
+            
+            with st.container():
+                st.markdown('<div class="result-box">', unsafe_allow_html=True)
+                st.subheader("Qwen-VL分析")
+                st.write(description)
+                st.markdown('</div>', unsafe_allow_html=True)
                 
-                else:
-                    # 简单匹配模式
-                    use_ai = False
+                # 分析描述，确定内容类型
+                content_type, content_name = analyze_description(description)
+                
+                # 根据内容类型提供不同的信息
+                if content_type == "food":
+                    st.markdown('<h2 class="sub-header">食物热量信息</h2>', unsafe_allow_html=True)
                     
-                    # 生成卡通图像
-                    cartoon_path = get_cartoon_image(
-                        image_path=image_path, 
-                        description=description,
-                        use_ai_generation=use_ai
-                    )
+                    # 获取食物热量信息
+                    food_info = get_food_calories(content_name)
                     
-                    if cartoon_path and os.path.exists(cartoon_path):
-                        # 显示卡通图像
-                        cartoon_image = Image.open(cartoon_path)
-                        st.image(cartoon_image, caption="匹配的卡通图像", use_column_width=True)
+                    # 显示食物热量信息
+                    if food_info["热量"]:
+                        st.success(f"{content_name}的热量信息: {food_info['热量']} 千卡/100克")
+                        st.write(f"描述: {food_info['描述']}")
                         
-                        # 提供下载链接
-                        with open(cartoon_path, "rb") as file:
-                            cartoon_bytes = file.read()
-                            
-                        st.download_button(
-                            label="下载卡通图像",
-                            data=cartoon_bytes,
-                            file_name=os.path.basename(cartoon_path),
-                            mime="image/jpeg"
-                        )
+                        # 如果有详细营养信息，显示它们
+                        if "营养素" in food_info:
+                            st.subheader("营养成分:")
+                            nutrients = food_info["营养素"]
+                            for nutrient, value in nutrients.items():
+                                st.write(f"- {nutrient}: {value}g")
                         
-                        st.info("卡通图像是通过内容匹配生成的")
+                        # 显示类似食物
+                        similar_foods = get_similar_foods(content_name)
+                        if similar_foods:
+                            st.subheader("类似食物:")
+                            st.write(", ".join(similar_foods))
                     else:
-                        st.error("无法生成卡通图像，请尝试其他图片或选择其他生成模式")
+                        st.warning(f"未找到{content_name}的热量信息")
+                
+                elif content_type == "product":
+                    st.markdown('<h2 class="sub-header">商品购买信息</h2>', unsafe_allow_html=True)
+                    
+                    # 检查是否确实是商品
+                    if is_likely_product(description):
+                        # 生成购买链接
+                        links = generate_purchase_links(content_name)
+                        
+                        st.subheader("可能的购买链接:")
+                        for link in links:
+                            st.markdown(f"- [{link['name']}]({link['url']})")
+                            
+                        st.caption("注意: 这些链接是根据识别结果自动生成的，不代表对特定产品的推荐")
+                    else:
+                        st.info("图片中的内容可能不是商品，或者无法确定具体商品类型")
+        
+        # 显示看图写作文结果
+        if "作文" in results:
+            essay = results["作文"]
+            
+            st.markdown('<h2 class="sub-header">看图写作文</h2>', unsafe_allow_html=True)
+            
+            with st.container():
+                st.markdown('<div class="essay-box">', unsafe_allow_html=True)
+                st.write(essay)
+                st.markdown('</div>', unsafe_allow_html=True)
+                
+                # 提供复制按钮
+                st.download_button(
+                    label="下载作文文本",
+                    data=essay,
+                    file_name="作文.txt",
+                    mime="text/plain"
+                )
+        
+        # 显示看图解题结果
+        if "解题" in results:
+            solution = results["解题"]
+            
+            st.markdown('<h2 class="sub-header">看图解题</h2>', unsafe_allow_html=True)
+            
+            with st.container():
+                st.markdown('<div class="problem-box">', unsafe_allow_html=True)
+                st.write(solution)
+                st.markdown('</div>', unsafe_allow_html=True)
+                
+                # 提供复制按钮
+                st.download_button(
+                    label="下载解题过程",
+                    data=solution,
+                    file_name="解题过程.txt",
+                    mime="text/plain"
+                )
+        
+        # 显示创意内容（故事、诗歌、科普）
+        for task in ["故事", "诗歌", "科普"]:
+            if task in results:
+                content = results[task]
+                
+                st.markdown(f'<h2 class="sub-header">看图{task}</h2>', unsafe_allow_html=True)
+                
+                with st.container():
+                    st.markdown('<div class="creative-box">', unsafe_allow_html=True)
+                    st.write(content)
+                    st.markdown('</div>', unsafe_allow_html=True)
+                    
+                    # 提供复制按钮
+                    st.download_button(
+                        label=f"下载{task}内容",
+                        data=content,
+                        file_name=f"{task}.txt",
+                        mime="text/plain"
+                    )
         
         # 删除临时文件
-        if not isinstance(uploaded_file, str) and os.path.exists("temp_image.jpg"):
-            try:
-                os.remove("temp_image.jpg")
-            except:
-                pass
+        try:
+            if os.path.exists(image_path):
+                os.remove(image_path)
+        except:
+            pass
     
     # 底部信息
     st.markdown('<div class="footer">通义千问视觉语言模型智能识别助手 © 2023</div>', unsafe_allow_html=True)

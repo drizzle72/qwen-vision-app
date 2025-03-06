@@ -1,7 +1,7 @@
 """
 通义千问视觉语言模型(Qwen-VL) API接口模块
 
-处理与通义千问API的通信，发送图像并获取识别结果
+处理与通义千问API的通信，发送图像并获取识别结果、作文和解题
 """
 
 import os
@@ -16,8 +16,18 @@ load_dotenv()
 
 # 获取API密钥
 API_KEY = os.getenv("QWEN_API_KEY")
-# 修正API端点
+# 通义千问API端点
 API_BASE = "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation"
+
+# 创建任务类型
+TASK_TYPES = {
+    "识别": "请识别这张图片中的内容，详细描述图中的主要物体。如果是食物，请标注出食物名称；如果是商品，请标注出商品名称和类别。",
+    "作文": "请根据这张图片写一篇不少于300字的作文，要有创意，生动形象，富有感情。",
+    "解题": "这是一道题目，请详细分析并解答，给出完整的解题步骤和答案。",
+    "故事": "请根据这张图片创作一个有趣的故事，包含人物、情节和结局。",
+    "诗歌": "请根据这张图片创作一首诗。",
+    "科普": "请根据这张图片进行详细的科普解释，介绍相关的科学知识。"
+}
 
 class QwenAPI:
     def __init__(self, api_key=None):
@@ -55,16 +65,18 @@ class QwenAPI:
             print(f"编码图片时出错: {str(e)}")
             raise
     
-    def identify_image(self, image_path=None, image_base64=None):
+    def process_image_request(self, image_path=None, image_base64=None, task_type="识别", custom_prompt=None):
         """
-        识别图片内容
+        处理图片请求，根据任务类型调用API
         
         参数:
             image_path (str, optional): 图片文件路径
             image_base64 (str, optional): base64编码的图片数据
+            task_type (str): 任务类型 ("识别", "作文", "解题", "故事", "诗歌", "科普")
+            custom_prompt (str, optional): 自定义提示，如果提供则覆盖预设的任务提示
             
         返回:
-            dict: API返回的识别结果
+            dict: API返回的处理结果
         """
         if not image_path and not image_base64:
             raise ValueError("必须提供图片路径或base64编码的图片数据")
@@ -85,7 +97,10 @@ class QwenAPI:
                 except Exception as pil_error:
                     return {"error": f"无法处理图片: {str(e)}, PIL错误: {str(pil_error)}"}
         
-        # 构造正确的API请求格式
+        # 获取任务提示
+        prompt = custom_prompt if custom_prompt else TASK_TYPES.get(task_type, TASK_TYPES["识别"])
+        
+        # 构造API请求
         try:
             payload = {
                 "model": "qwen-vl-plus",  # 使用通义千问VL-plus模型
@@ -95,7 +110,7 @@ class QwenAPI:
                             "role": "user",
                             "content": [
                                 {"image": f"data:image/jpeg;base64,{image_base64}"},
-                                {"text": "请识别这张图片中的内容，详细描述图中的主要物体。如果是食物，请标注出食物名称；如果是商品，请标注出商品名称和类别。"}
+                                {"text": prompt}
                             ]
                         }
                     ]
@@ -109,49 +124,10 @@ class QwenAPI:
             return {"error": f"API请求失败: {str(e)} - {e.response.text if hasattr(e, 'response') else '无响应详情'}"}
         except Exception as e:
             return {"error": f"处理过程中出错: {str(e)}"}
-
-    def mock_identify_image(self, image_path=None):
-        """
-        模拟图像识别结果（用于测试或API不可用时）
-        
-        参数:
-            image_path (str, optional): 图片文件路径（仅用于获取文件名）
-            
-        返回:
-            dict: 模拟的识别结果
-        """
-        # 从图片路径中提取文件名（如果有）
-        image_name = os.path.basename(image_path) if image_path else "unknown.jpg"
-        
-        # 根据文件名模拟不同的结果
-        text_content = ""
-        if "food" in image_name.lower() or "meal" in image_name.lower():
-            text_content = "这是一盘中式炒菜，看起来像宫保鸡丁，包含鸡肉块、花生和一些蔬菜，配有白米饭。"
-        elif "product" in image_name.lower() or "item" in image_name.lower():
-            text_content = "这是一款智能手机，看起来像是最新款的iPhone，黑色机身，显示屏上有应用图标。"
-        else:
-            text_content = "图片中是一片自然风景，有绿色的树木和蓝色的天空。"
-        
-        # 构造与API响应格式一致的模拟响应
-        return {
-            "output": {
-                "choices": [
-                    {
-                        "message": {
-                            "content": [
-                                {
-                                    "text": text_content
-                                }
-                            ]
-                        }
-                    }
-                ]
-            }
-        }
-            
+    
     def get_image_description(self, image_path=None, image_base64=None, use_mock=False):
         """
-        获取图片描述，支持真实API调用或模拟结果
+        获取图片描述
         
         参数:
             image_path (str, optional): 图片文件路径
@@ -162,10 +138,11 @@ class QwenAPI:
             str: 图片描述文本
         """
         if use_mock:
-            response = self.mock_identify_image(image_path)
+            # 模拟响应，用于测试
+            return "这是一张示例图片，包含了一些物体。（模拟结果）"
         else:
             try:
-                response = self.identify_image(image_path, image_base64)
+                response = self.process_image_request(image_path, image_base64, "识别")
             except Exception as e:
                 return f"API调用失败: {str(e)}"
         
@@ -174,12 +151,96 @@ class QwenAPI:
             return f"错误: {response['error']}"
         
         try:
-            # 根据通义千问API的响应格式提取文本内容
             return response["output"]["choices"][0]["message"]["content"][0]["text"]
         except (KeyError, IndexError) as e:
             print(f"解析API响应时出错: {str(e)} - 响应内容: {response}")
             return "无法解析API响应"
+    
+    def generate_essay(self, image_path=None, image_base64=None, custom_prompt=None):
+        """
+        根据图片生成作文
         
+        参数:
+            image_path (str, optional): 图片文件路径
+            image_base64 (str, optional): base64编码的图片数据
+            custom_prompt (str, optional): 自定义提示
+            
+        返回:
+            str: 生成的作文文本
+        """
+        try:
+            response = self.process_image_request(image_path, image_base64, "作文", custom_prompt)
+        except Exception as e:
+            return f"生成作文失败: {str(e)}"
+        
+        # 处理API响应
+        if "error" in response:
+            return f"错误: {response['error']}"
+        
+        try:
+            return response["output"]["choices"][0]["message"]["content"][0]["text"]
+        except (KeyError, IndexError) as e:
+            print(f"解析作文响应时出错: {str(e)} - 响应内容: {response}")
+            return "无法解析API响应"
+    
+    def solve_problem(self, image_path=None, image_base64=None, custom_prompt=None):
+        """
+        根据图片解题
+        
+        参数:
+            image_path (str, optional): 图片文件路径
+            image_base64 (str, optional): base64编码的图片数据
+            custom_prompt (str, optional): 自定义提示
+            
+        返回:
+            str: 解题过程和答案
+        """
+        try:
+            response = self.process_image_request(image_path, image_base64, "解题", custom_prompt)
+        except Exception as e:
+            return f"解题失败: {str(e)}"
+        
+        # 处理API响应
+        if "error" in response:
+            return f"错误: {response['error']}"
+        
+        try:
+            return response["output"]["choices"][0]["message"]["content"][0]["text"]
+        except (KeyError, IndexError) as e:
+            print(f"解析解题响应时出错: {str(e)} - 响应内容: {response}")
+            return "无法解析API响应"
+    
+    def generate_creative_content(self, image_path=None, image_base64=None, content_type="故事", custom_prompt=None):
+        """
+        根据图片生成创意内容（故事、诗歌、科普等）
+        
+        参数:
+            image_path (str, optional): 图片文件路径
+            image_base64 (str, optional): base64编码的图片数据
+            content_type (str): 内容类型 ("故事", "诗歌", "科普")
+            custom_prompt (str, optional): 自定义提示
+            
+        返回:
+            str: 生成的创意内容
+        """
+        if content_type not in TASK_TYPES:
+            content_type = "故事"  # 默认为故事
+            
+        try:
+            response = self.process_image_request(image_path, image_base64, content_type, custom_prompt)
+        except Exception as e:
+            return f"生成{content_type}失败: {str(e)}"
+        
+        # 处理API响应
+        if "error" in response:
+            return f"错误: {response['error']}"
+        
+        try:
+            return response["output"]["choices"][0]["message"]["content"][0]["text"]
+        except (KeyError, IndexError) as e:
+            print(f"解析{content_type}响应时出错: {str(e)} - 响应内容: {response}")
+            return "无法解析API响应"
+
 def analyze_description(description):
     """
     分析描述文本，判断图片内容类型
