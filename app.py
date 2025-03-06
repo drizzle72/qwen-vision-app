@@ -15,6 +15,14 @@ from dotenv import load_dotenv
 from qwen_api import QwenAPI, analyze_description
 from food_calories import get_food_calories, get_similar_foods
 from product_search import generate_purchase_links, is_likely_product
+from cartoon_generator import (
+    get_cartoon_image, 
+    get_available_styles, 
+    get_available_effects,
+    generate_multiple_styles, 
+    CARTOON_STYLES, 
+    CARTOON_EFFECTS
+)
 
 # 加载环境变量
 load_dotenv()
@@ -85,6 +93,7 @@ def main():
     * 上传一张图片进行识别
     * 获取食物热量信息（如果是食物）
     * 找到相似产品和购买链接（如果是商品）
+    * 生成多种风格的卡通图像
     """)
     
     # 侧边栏配置
@@ -97,6 +106,57 @@ def main():
         
         # 使用模拟数据的选项
         use_mock = st.checkbox("使用模拟数据 (无需API)")
+        
+        # 卡通图像生成选项
+        st.markdown("---")
+        st.subheader("卡通图像设置")
+        
+        # 选择卡通图像生成模式
+        cartoon_mode = st.radio(
+            "卡通图像生成模式",
+            ["简单匹配", "AI生成", "多样风格"]
+        )
+        
+        # 如果选择AI生成，显示风格选择
+        if cartoon_mode == "AI生成":
+            cartoon_style = st.selectbox(
+                "选择卡通风格",
+                CARTOON_STYLES,
+                format_func=lambda x: x.replace("_", " ").title()
+            )
+            
+            cartoon_effect = st.selectbox(
+                "选择卡通效果",
+                CARTOON_EFFECTS,
+                format_func=lambda x: x.replace("_", " ").title()
+            )
+            
+        # 如果选择多样风格，显示高级选项
+        elif cartoon_mode == "多样风格":
+            st.write("将生成多种不同风格的卡通图像")
+            
+            # 风格多选
+            cartoon_styles = st.multiselect(
+                "选择多种卡通风格（最多3种）",
+                CARTOON_STYLES,
+                default=CARTOON_STYLES[:3] if len(CARTOON_STYLES) >= 3 else CARTOON_STYLES,
+                format_func=lambda x: x.replace("_", " ").title(),
+                max_selections=3
+            )
+            
+            # 效果多选
+            cartoon_effects = st.multiselect(
+                "选择多种卡通效果（最多2种）",
+                CARTOON_EFFECTS,
+                default=["normal"],
+                format_func=lambda x: x.replace("_", " ").title(),
+                max_selections=2
+            )
+        else:
+            cartoon_style = None
+            cartoon_effect = "normal"
+            cartoon_styles = None
+            cartoon_effects = None
         
         st.markdown("---")
         
@@ -273,6 +333,114 @@ def main():
                                 st.markdown(f'<a href="{link}" target="_blank" class="purchase-btn">{platform}</a>', unsafe_allow_html=True)
                     
                     st.markdown('</div>', unsafe_allow_html=True)
+            
+            # 生成卡通图像
+            st.markdown('<h2 class="sub-header">卡通图像生成</h2>', unsafe_allow_html=True)
+            
+            with st.spinner("正在生成卡通图像..."):
+                # 根据设置选择卡通生成模式
+                if cartoon_mode == "AI生成":
+                    use_ai = True
+                    
+                    # 生成卡通图像
+                    cartoon_path = get_cartoon_image(
+                        image_path=image_path, 
+                        description=description,
+                        use_ai_generation=use_ai,
+                        style=cartoon_style,
+                        effect=cartoon_effect
+                    )
+                    
+                    if cartoon_path and os.path.exists(cartoon_path):
+                        # 显示卡通图像
+                        cartoon_image = Image.open(cartoon_path)
+                        st.image(cartoon_image, caption=f"风格: {cartoon_style.replace('_', ' ').title()}, 效果: {cartoon_effect.replace('_', ' ').title()}", use_column_width=True)
+                        
+                        # 提供下载链接
+                        with open(cartoon_path, "rb") as file:
+                            cartoon_bytes = file.read()
+                            
+                        st.download_button(
+                            label="下载卡通图像",
+                            data=cartoon_bytes,
+                            file_name=os.path.basename(cartoon_path),
+                            mime="image/jpeg"
+                        )
+                        
+                        st.info(f"使用{cartoon_style.replace('_', ' ').title()}风格和{cartoon_effect.replace('_', ' ').title()}效果生成")
+                    else:
+                        st.error("无法生成卡通图像，请尝试其他图片或选择其他生成模式")
+                
+                elif cartoon_mode == "多样风格":
+                    # 生成多种风格的卡通图像
+                    cartoon_paths = generate_multiple_styles(
+                        image_path=image_path,
+                        description=description,
+                        styles=cartoon_styles,
+                        effects=cartoon_effects
+                    )
+                    
+                    if cartoon_paths and len(cartoon_paths) > 0:
+                        # 创建多列布局显示多个卡通图像
+                        cols = st.columns(min(3, len(cartoon_paths)))
+                        
+                        for i, path in enumerate(cartoon_paths):
+                            if os.path.exists(path):
+                                with cols[i % len(cols)]:
+                                    # 从文件名解析风格和效果信息
+                                    filename = os.path.basename(path)
+                                    style_info = filename.split("_")[1]
+                                    effect_info = filename.split("_")[2] if len(filename.split("_")) > 2 else "normal"
+                                    
+                                    # 显示卡通图像
+                                    cartoon_image = Image.open(path)
+                                    st.image(cartoon_image, caption=f"{style_info.replace('_', ' ').title()}", use_column_width=True)
+                                    
+                                    # 提供下载链接
+                                    with open(path, "rb") as file:
+                                        cartoon_bytes = file.read()
+                                        
+                                    st.download_button(
+                                        label=f"下载 {style_info}",
+                                        data=cartoon_bytes,
+                                        file_name=os.path.basename(path),
+                                        mime="image/jpeg"
+                                    )
+                        
+                        st.success(f"成功生成 {len(cartoon_paths)} 种不同风格的卡通图像")
+                    else:
+                        st.error("生成多样风格卡通图像失败，请尝试其他图片或选择其他生成模式")
+                
+                else:
+                    # 简单匹配模式
+                    use_ai = False
+                    
+                    # 生成卡通图像
+                    cartoon_path = get_cartoon_image(
+                        image_path=image_path, 
+                        description=description,
+                        use_ai_generation=use_ai
+                    )
+                    
+                    if cartoon_path and os.path.exists(cartoon_path):
+                        # 显示卡通图像
+                        cartoon_image = Image.open(cartoon_path)
+                        st.image(cartoon_image, caption="匹配的卡通图像", use_column_width=True)
+                        
+                        # 提供下载链接
+                        with open(cartoon_path, "rb") as file:
+                            cartoon_bytes = file.read()
+                            
+                        st.download_button(
+                            label="下载卡通图像",
+                            data=cartoon_bytes,
+                            file_name=os.path.basename(cartoon_path),
+                            mime="image/jpeg"
+                        )
+                        
+                        st.info("卡通图像是通过内容匹配生成的")
+                    else:
+                        st.error("无法生成卡通图像，请尝试其他图片或选择其他生成模式")
         
         # 删除临时文件
         if not isinstance(uploaded_file, str) and os.path.exists("temp_image.jpg"):
