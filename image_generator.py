@@ -10,7 +10,7 @@ import base64
 import time
 import random
 import requests
-from PIL import Image, ImageEnhance
+from PIL import Image, ImageEnhance, ImageFilter
 from io import BytesIO
 from dotenv import load_dotenv
 import numpy as np
