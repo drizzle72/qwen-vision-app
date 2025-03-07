@@ -49,221 +49,18 @@ def set_page_config():
     current_theme = st.session_state.get("theme", "默认蓝")
     theme_config = THEMES[current_theme]
     
-    st.set_page_config(
+st.set_page_config(
         page_title="通义千问视觉智能助手",
         page_icon="🧠",
-        layout="wide",
-        initial_sidebar_state="expanded",
+    layout="wide",
+    initial_sidebar_state="expanded",
         menu_items={
             'About': "# 通义千问视觉智能助手\n由通义千问视觉语言模型驱动的多功能AI助手"
         }
-    )
-    
+)
+
     # 应用主题样式
-    st.markdown(
-        f"""
-        <style>
-            :root {{
-                --primary-color: {theme_config["primary_color"]};
-                --background-color: {theme_config["background_color"]};
-                --text-color: {theme_config["text_color"]};
-                --font-family: {theme_config["font"]};
-            }}
-            
-            .stApp {{
-                background-color: var(--background-color);
-                color: var(--text-color);
-                font-family: var(--font-family);
-            }}
-            
-            .stButton>button {{
-                background-color: var(--primary-color);
-                color: white;
-                border-radius: 5px;
-                padding: 0.5rem 1rem;
-                font-size: 1rem;
-                border: none;
-            }}
-            
-            .stTextInput>div>div>input {{
-                color: var(--text-color);
-            }}
-            
-            h1, h2, h3, h4, h5, h6 {{
-                color: var(--primary-color);
-                font-family: var(--font-family);
-            }}
-            
-            .main-title {{
-                font-size: 2.5rem !important;
-                color: var(--primary-color);
-                text-align: center;
-                margin-bottom: 1rem;
-                font-family: var(--font-family);
-            }}
-            
-            .subtitle {{
-                font-size: 1.2rem !important;
-                color: var(--text-color);
-                text-align: center;
-                margin-bottom: 2rem;
-                font-family: var(--font-family);
-            }}
-            
-            .task-header {{
-                font-size: 1.5rem !important;
-                color: var(--primary-color);
-                margin-top: 1rem;
-                margin-bottom: 1rem;
-                font-family: var(--font-family);
-            }}
-            
-            .result-box {{
-                background-color: {theme_config["background_color"] if current_theme == "默认蓝" else "#f5f5f5"};
-                padding: 1.5rem;
-                border-radius: 10px;
-                margin-top: 1rem;
-                margin-bottom: 1rem;
-                border-left: 5px solid var(--primary-color);
-            }}
-            
-            .essay-content {{
-                font-size: 1.1rem;
-                line-height: 1.8;
-                text-indent: 2em;
-                white-space: pre-wrap;
-                font-family: var(--font-family);
-            }}
-            
-            .problem-solution {{
-                font-size: 1.1rem;
-                line-height: 1.8;
-                white-space: pre-wrap;
-                font-family: var(--font-family);
-            }}
-            
-            .food-section {{
-                background-color: {theme_config["primary_color"] + "20"};
-                padding: 1rem;
-                border-radius: 10px;
-                margin-top: 0.5rem;
-            }}
-            
-            .product-section {{
-                background-color: {theme_config["primary_color"] + "15"};
-                padding: 1rem;
-                border-radius: 10px;
-                margin-top: 0.5rem;
-            }}
-            
-            .creative-section {{
-                background-color: {theme_config["primary_color"] + "10"};
-                padding: 1rem;
-                border-radius: 10px;
-                margin-top: 0.5rem;
-            }}
-            
-            .generated-image {{
-                margin-top: 1rem;
-                margin-bottom: 1rem;
-                text-align: center;
-                max-width: 100%;
-            }}
-            
-            .style-option {{
-                margin-right: 10px;
-                margin-bottom: 10px;
-                display: inline-block;
-            }}
-            
-            .info-box {{
-                background-color: {theme_config["primary_color"] + "20"};
-                padding: 1rem;
-                border-radius: 5px;
-                margin-bottom: 1rem;
-            }}
-            
-            .warning-box {{
-                background-color: #FFF3E0;
-                padding: 1rem;
-                border-radius: 5px;
-                margin-bottom: 1rem;
-            }}
-            
-            .theme-selector {{
-                background-color: {theme_config["background_color"]};
-                padding: 10px;
-                border-radius: 10px;
-                margin-bottom: 20px;
-                border: 1px solid {theme_config["primary_color"] + "40"};
-            }}
-            
-            .theme-option {{
-                cursor: pointer;
-                padding: 8px;
-                border-radius: 5px;
-                display: inline-block;
-                margin-right: 10px;
-                margin-bottom: 5px;
-            }}
-            
-            /* 联系作者相关样式 */
-            .contact-container {{
-                background-color: {theme_config["background_color"]};
-                border: 1px solid {theme_config["primary_color"] + "40"};
-                border-radius: 10px;
-                padding: 20px;
-                margin-top: 20px;
-                margin-bottom: 20px;
-                box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-            }}
-            
-            .contact-header {{
-                color: {theme_config["primary_color"]};
-                border-bottom: 2px solid {theme_config["primary_color"] + "40"};
-                padding-bottom: 10px;
-                margin-bottom: 15px;
-            }}
-            
-            .contact-form {{
-                background-color: {theme_config["background_color"]};
-                padding: 15px;
-                border-radius: 8px;
-                border: 1px solid {theme_config["primary_color"] + "20"};
-            }}
-            
-            .footer {{
-                position: fixed;
-                bottom: 0;
-                left: 0;
-                right: 0;
-                background-color: {theme_config["background_color"]};
-                color: {theme_config["text_color"]};
-                padding: 10px;
-                text-align: center;
-                font-size: 0.8rem;
-                border-top: 1px solid {theme_config["primary_color"] + "20"};
-                z-index: 1000;
-            }}
-            
-            .footer a {{
-                color: {theme_config["primary_color"]};
-                text-decoration: none;
-            }}
-            
-            .footer a:hover {{
-                text-decoration: underline;
-            }}
-            
-            /* 暗模式适配 */
-            {
-                ".stMarkdown, .stText, p, li {color: " + theme_config["text_color"] + ";}" 
-                if current_theme == "暗夜模式" else ""
-            }
-        </style>
-        """, 
-        unsafe_allow_html=True
-    )
+
 
 def save_text_as_file(text, filename):
     """保存文本为文件"""
@@ -1127,7 +924,7 @@ def main():
                     with col1:
                         st.markdown("**原始图像**")
                         st.image(variation_image, use_container_width=True)
-                        
+                    
                     with col2:
                         if os.path.exists(variation_image_path):
                             st.markdown("**变体图像**")
@@ -1270,8 +1067,8 @@ def main():
                 if st.button("关闭", key="close_contact"):
                     st.session_state["show_contact"] = False
                     st.experimental_rerun()
-            st.markdown('</div>', unsafe_allow_html=True)
-    
+                    st.markdown('</div>', unsafe_allow_html=True)
+        
     # 添加页脚
     st.markdown("""
     <div class="footer">
@@ -1290,10 +1087,10 @@ def main():
         });
     </script>
     """, unsafe_allow_html=True)
-                
+
 if __name__ == "__main__":
     try:
-        main()
+        main() 
     except Exception as e:
         st.error(f"应用程序发生错误: {str(e)}")
         st.exception(e) 

@@ -1,0 +1,15 @@
+{
+  "prompt": "日落时分的海滩，波浪轻轻拍打着沙滩",
+  "style": "写实",
+  "quality": "标准",
+  "aspect_ratio": "9:16 手机",
+  "enhancers": [
+    "细节增强"
+  ],
+  "negative_prompt": "",
+  "seed": 4,
+  "use_mock": false,
+  "generation_time": 0.53,
+  "result_path": "generated_images\\basic_mock_1741304588_4.png",
+  "timestamp": 1741304588.6349785
+}

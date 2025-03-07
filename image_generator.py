@@ -14,6 +14,8 @@ from PIL import Image
 from io import BytesIO
 from dotenv import load_dotenv
 import numpy as np
+import json
+from PIL import ImageDraw, ImageFont
 
 # 加载环境变量
 load_dotenv()
@@ -24,7 +26,7 @@ os.makedirs(GENERATED_IMAGES_DIR, exist_ok=True)
 
 # 图像生成API配置
 STABILITY_API_KEY = os.getenv("STABILITY_API_KEY")  # Stability AI API密钥
-STABILITY_API_BASE = "https://api.stability.ai/v1/generation"
+STABILITY_API_BASE = "https://api.stability.ai/v1/generation"  # 更新为最新的API基础URL
 
 # 创建图像风格列表
 IMAGE_STYLES = {
@@ -201,13 +203,20 @@ class ImageGenerator:
         返回:
             str: 生成的图像文件路径
         """
+        if not self.stability_api_key:
+            raise ValueError("未提供Stability API密钥")
+            
         # 准备API调用
         headers = {
+            "Authorization": f"Bearer {self.stability_api_key}",
             "Content-Type": "application/json",
-            "Accept": "application/json",
-            "Authorization": f"Bearer {self.stability_api_key}"
+            "Accept": "application/json"
         }
         
+        # 使用Text-to-Image API端点
+        api_url = f"{STABILITY_API_BASE}/stable-diffusion-v1-6/text-to-image"
+        
+        # 构建请求参数
         payload = {
             "text_prompts": [
                 {
@@ -219,11 +228,14 @@ class ImageGenerator:
             "height": quality_params["height"],
             "width": quality_params["width"],
             "samples": 1,
-            "steps": quality_params["steps"],
-            "seed": seed
+            "steps": quality_params["steps"]
         }
         
-        # 添加负面提示词（如果有）
+        # 添加种子(如果提供)
+        if seed is not None:
+            payload["seed"] = seed
+            
+        # 添加负面提示词(如果提供)
         if negative_prompt:
             payload["text_prompts"].append(
                 {
@@ -232,36 +244,57 @@ class ImageGenerator:
                 }
             )
             
-        # 调用API
-        response = requests.post(
-            f"{STABILITY_API_BASE}/text-to-image",
-            headers=headers,
-            json=payload
-        )
-        
-        # 处理响应
-        if response.status_code == 200:
-            data = response.json()
-            if "artifacts" in data and len(data["artifacts"]) > 0:
+        try:
+            print(f"正在调用Stability API: {api_url}")
+            print(f"请求参数: {json.dumps(payload, ensure_ascii=False, indent=2)}")
+            
+            # 调用API
+            response = requests.post(
+                api_url,
+                headers=headers,
+                json=payload
+            )
+            
+            # 检查是否成功
+            if response.status_code != 200:
+                error_msg = f"API调用失败: {response.status_code} - {response.text}"
+                print(error_msg)
+                raise Exception(error_msg)
+                
+            # 解析响应
+            response_data = response.json()
+            
+            # 处理响应
+            if "artifacts" in response_data and len(response_data["artifacts"]) > 0:
                 # 获取生成的图像
-                image_data = base64.b64decode(data["artifacts"][0]["base64"])
+                image_data = base64.b64decode(response_data["artifacts"][0]["base64"])
                 
                 # 保存图像
                 timestamp = int(time.time())
-                output_path = os.path.join(GENERATED_IMAGES_DIR, f"gen_{timestamp}_{seed}.png")
+                output_path = os.path.join(GENERATED_IMAGES_DIR, f"api_{timestamp}_{seed}.png")
                 
                 with open(output_path, "wb") as f:
                     f.write(image_data)
                     
+                print(f"图像已保存到: {output_path}")
                 return output_path
             else:
-                raise ValueError("API响应格式异常")
-        else:
-            raise Exception(f"API调用失败: {response.status_code} - {response.text}")
+                error_msg = f"API响应中未找到图像数据: {json.dumps(response_data, ensure_ascii=False)}"
+                print(error_msg)
+                raise ValueError(error_msg)
+                
+        except requests.exceptions.RequestException as e:
+            error_msg = f"API请求异常: {str(e)}"
+            print(error_msg)
+            raise Exception(error_msg)
+        except Exception as e:
+            error_msg = f"处理API响应时出错: {str(e)}"
+            print(error_msg)
+            raise Exception(error_msg)
     
     def _mock_generate_image(self, prompt, style, quality_params, seed):
         """
-        模拟图像生成（用于测试或API不可用时）
+        模拟图像生成（用于测试或无API密钥时）
         
         参数:
             prompt (str): 提示词
@@ -272,258 +305,129 @@ class ImageGenerator:
         返回:
             str: 生成的图像文件路径
         """
-        # 设置随机种子以保证可重复性
-        random.seed(seed)
-        np.random.seed(seed)
+        if seed is not None:
+            random.seed(seed)
+            np.random.seed(seed)
         
-        # 获取图像尺寸
+        # 提取颜色信息
+        colors = self._extract_colors_from_prompt(prompt)
+        
+        # 创建随机生成图像
         width = quality_params["width"]
         height = quality_params["height"]
+        image = Image.new('RGB', (width, height), color='white')
+        draw = ImageDraw.Draw(image)
         
-        # 根据提示词和风格确定主色调
-        colors = self._get_colors_from_prompt(prompt, style)
+        # 根据提示词和风格生成简单的视觉效果
+        num_shapes = random.randint(20, 50)
         
-        # 创建一个空白图像
-        try:
-            from PIL import Image, ImageDraw, ImageFilter, ImageEnhance, ImageOps
-            
-            # 基于风格选择不同的生成方法
-            img = None
-            
-            if style in ["写实", "摄影"]:
-                # 创建渐变背景
-                img = Image.new('RGB', (width, height), colors[0])
-                draw = ImageDraw.Draw(img)
-                
-                # 添加一些景深效果
-                for i in range(100):
-                    x1 = random.randint(0, width)
-                    y1 = random.randint(0, height)
-                    x2 = random.randint(0, width)
-                    y2 = random.randint(0, height)
-                    
-                    size = random.randint(50, 200)
-                    color = random.choice(colors)
-                    blur = random.randint(10, 70)
-                    
-                    ellipse_img = Image.new('RGBA', (width, height), (0, 0, 0, 0))
-                    ellipse_draw = ImageDraw.Draw(ellipse_img)
-                    ellipse_draw.ellipse([x1, y1, x1+size, y1+size], fill=color + (100,))
-                    
-                    # 应用高斯模糊
-                    ellipse_img = ellipse_img.filter(ImageFilter.GaussianBlur(radius=blur/10))
-                    
-                    # 混合图层
-                    img = Image.alpha_composite(img.convert('RGBA'), ellipse_img).convert('RGB')
-                
-                # 添加一些锐化
-                enhancer = ImageEnhance.Sharpness(img)
-                img = enhancer.enhance(1.5)
-                
-            elif style in ["油画", "印象派"]:
-                # 创建油画效果
-                img = Image.new('RGB', (width, height), (240, 240, 240))
-                draw = ImageDraw.Draw(img)
-                
-                # 创建背景
-                for y in range(0, height, 4):
-                    for x in range(0, width, 4):
-                        color = random.choice(colors)
-                        size = random.randint(3, 15)
-                        draw.rectangle([x, y, x+size, y+size], fill=color)
-                
-                # 添加一些笔触
-                for _ in range(width * height // 500):
-                    x = random.randint(0, width)
-                    y = random.randint(0, height)
-                    size = random.randint(5, 30)
-                    color = random.choice(colors)
-                    angle = random.randint(0, 360)
-                    
-                    # 画一个旋转的矩形模拟笔触
-                    brush = Image.new('RGBA', (size * 3, size), (0, 0, 0, 0))
-                    brush_draw = ImageDraw.Draw(brush)
-                    brush_draw.rectangle([0, 0, size * 2, size], fill=color + (200,))
-                    
-                    # 旋转并粘贴
-                    brush = brush.rotate(angle, expand=True)
-                    img.paste(brush, (x - brush.width//2, y - brush.height//2), brush)
-                
-                # 添加帆布纹理
-                texture = Image.new('RGB', (width, height), (0, 0, 0))
-                for y in range(0, height, 2):
-                    for x in range(0, width, 2):
-                        noise = random.randint(-15, 15)
-                        texture.putpixel((x % width, y % height), (noise+128, noise+128, noise+128))
-                
-                # 混合纹理
-                img = Image.blend(img, texture, 0.1)
-                
-            elif style in ["水彩"]:
-                # 创建水彩效果
-                img = Image.new('RGB', (width, height), (250, 250, 250))
-                
-                # 添加水彩色块
-                for _ in range(20):
-                    mask = Image.new('L', (width, height), 0)
-                    mask_draw = ImageDraw.Draw(mask)
-                    
-                    # 不规则形状
-                    points = []
-                    center_x = random.randint(width // 4, width * 3 // 4)
-                    center_y = random.randint(height // 4, height * 3 // 4)
-                    num_points = random.randint(5, 15)
-                    
-                    for i in range(num_points):
-                        angle = i * (360 / num_points)
-                        distance = random.randint(width//10, width//3)
-                        x = center_x + int(distance * np.cos(np.radians(angle)))
-                        y = center_y + int(distance * np.sin(np.radians(angle)))
-                        points.append((x, y))
-                    
-                    mask_draw.polygon(points, fill=random.randint(150, 250))
-                    
-                    # 模糊并应用
-                    mask = mask.filter(ImageFilter.GaussianBlur(radius=30))
-                    
-                    # 创建彩色层
-                    color_layer = Image.new('RGB', (width, height), random.choice(colors))
-                    
-                    # 组合
-                    img = Image.composite(color_layer, img, mask)
-                
-                # 应用水彩效果
-                img = img.filter(ImageFilter.SMOOTH_MORE)
-                img = img.filter(ImageFilter.EDGE_ENHANCE_MORE)
-                
-                # 增加对比度
-                enhancer = ImageEnhance.Contrast(img)
-                img = enhancer.enhance(1.2)
-                
-            elif style in ["二次元", "动漫"]:
-                # 创建动漫风格
-                img = Image.new('RGB', (width, height), (250, 250, 250))
-                draw = ImageDraw.Draw(img)
-                
-                # 背景
-                for y in range(0, height, 10):
-                    color_index = random.randint(0, len(colors)-1)
-                    color = colors[color_index]
-                    draw.rectangle([0, y, width, y+random.randint(10, 50)], fill=color, width=0)
-                
-                # 添加一些圆形
-                for _ in range(width * height // 20000):
-                    x = random.randint(0, width)
-                    y = random.randint(0, height)
-                    size = random.randint(width//10, width//3)
-                    color = random.choice(colors)
-                    
-                    # 模拟动漫风格的色块
-                    circle_img = Image.new('RGBA', (width, height), (0, 0, 0, 0))
-                    circle_draw = ImageDraw.Draw(circle_img)
-                    circle_draw.ellipse([x-size//2, y-size//2, x+size//2, y+size//2], fill=color + (150,))
-                    
-                    # 应用
-                    img = Image.alpha_composite(img.convert('RGBA'), circle_img).convert('RGB')
-                
-                # 增强边缘
-                img = img.filter(ImageFilter.EDGE_ENHANCE)
-                img = img.filter(ImageFilter.SMOOTH)
-                
-            elif style in ["像素艺术"]:
-                # 像素风
-                pixel_size = max(2, width // 64)  # 根据图像大小确定像素大小
-                small_width = width // pixel_size
-                small_height = height // pixel_size
-                
-                # 创建低分辨率图像
-                img = Image.new('RGB', (small_width, small_height), (0, 0, 0))
-                draw = ImageDraw.Draw(img)
-                
-                # 绘制像素内容
-                for y in range(small_height):
-                    for x in range(small_width):
-                        if random.random() < 0.5:
-                            draw.point([x, y], random.choice(colors))
-                        else:
-                            # 偶尔画一些几何形状
-                            if random.random() < 0.01:
-                                shape_size = random.randint(1, 3)
-                                draw.rectangle([x, y, x+shape_size, y+shape_size], random.choice(colors))
-                
-                # 放大到指定尺寸，禁用平滑保持像素锐利
-                img = img.resize((width, height), Image.NEAREST)
-                
+        # 确保有一组默认颜色
+        default_colors = [(255, 0, 0), (0, 255, 0), (0, 0, 255), 
+                         (255, 255, 0), (255, 0, 255), (0, 255, 255)]
+        
+        # 如果没有从提示词中提取到有效颜色，使用默认颜色
+        if not colors:
+            colors = default_colors
+        
+        # 确保所有颜色都是有效的RGB元组
+        valid_colors = []
+        for color in colors:
+            if isinstance(color, tuple) and len(color) == 3:
+                valid_colors.append(color)
+            elif isinstance(color, int):
+                # 如果是单个整数，创建灰度颜色
+                valid_colors.append((color, color, color))
             else:
-                # 默认生成方法
-                img = Image.new('RGB', (width, height), (220, 220, 220))
-                draw = ImageDraw.Draw(img)
-                
-                # 创建随机几何图形
-                for _ in range(width * height // 8000):
-                    shape_type = random.choice(['rectangle', 'ellipse', 'line'])
-                    color = random.choice(colors)
-                    x1 = random.randint(0, width)
-                    y1 = random.randint(0, height)
-                    x2 = x1 + random.randint(width//10, width//2)
-                    y2 = y1 + random.randint(height//10, height//2)
-                    
-                    if shape_type == 'rectangle':
-                        draw.rectangle([x1, y1, x2, y2], fill=color)
-                    elif shape_type == 'ellipse':
-                        draw.ellipse([x1, y1, x2, y2], fill=color)
-                    else:  # line
-                        thickness = random.randint(1, 10)
-                        draw.line([x1, y1, x2, y2], fill=color, width=thickness)
-                
-                # 添加一些模糊和纹理
-                img = img.filter(ImageFilter.GaussianBlur(radius=2))
-                
-                # 增加对比度
-                enhancer = ImageEnhance.Contrast(img)
-                img = enhancer.enhance(1.3)
-            
-            # 应用一些最终处理
-            # 添加轻微的噪点
-            noise = Image.effect_noise((width, height), 10)
-            img = Image.blend(img, noise.convert('RGB'), 0.05)
-            
-            # 增强色彩
-            enhancer = ImageEnhance.Color(img)
-            img = enhancer.enhance(1.2)
-            
-            # 保存结果
-            timestamp = int(time.time())
-            output_path = os.path.join(GENERATED_IMAGES_DIR, f"mock_{timestamp}_{seed}.png")
-            img.save(output_path)
-            
-            return output_path
+                # 跳过无效颜色
+                continue
         
-        except Exception as e:
-            print(f"模拟图像生成错误: {e}")
-            
-            # 如果PIL增强功能失败，回退到最基本的生成
-            try:
-                # 创建一个随机颜色的基础图像
-                img_array = np.zeros((height, width, 3), dtype=np.uint8)
-                
-                # 一个简单的图案
-                for y in range(height):
-                    for x in range(width):
-                        color_idx = (x * y) % len(colors)
-                        img_array[y, x] = colors[color_idx]
-                
-                img = Image.fromarray(img_array)
-                
-                # 保存结果
-                timestamp = int(time.time())
-                output_path = os.path.join(GENERATED_IMAGES_DIR, f"basic_mock_{timestamp}_{seed}.png")
-                img.save(output_path)
-                
-                return output_path
-            except Exception as inner_e:
-                print(f"基本图像生成也失败了: {inner_e}")
-                raise
+        # 如果没有有效颜色，使用默认颜色
+        if not valid_colors:
+            valid_colors = default_colors
+        
+        # 根据风格调整图像生成
+        if style == "写实":
+            # 更多矩形和直线
+            for i in range(num_shapes):
+                color = random.choice(valid_colors)
+                x1 = random.randint(0, width)
+                y1 = random.randint(0, height)
+                x2 = random.randint(0, width)
+                y2 = random.randint(0, height)
+                # 确保x2 >= x1且y2 >= y1
+                x1, x2 = min(x1, x2), max(x1, x2)
+                y1, y2 = min(y1, y2), max(y1, y2)
+                if random.random() > 0.5:
+                    draw.rectangle([x1, y1, x2, y2], fill=color)
+                else:
+                    draw.line([x1, y1, x2, y2], fill=color, width=random.randint(1, 10))
+        
+        elif style == "油画":
+            # 更多的椭圆和圆形
+            for i in range(num_shapes):
+                color = random.choice(valid_colors)
+                x1 = random.randint(0, width)
+                y1 = random.randint(0, height)
+                size = random.randint(20, 100)
+                # 确保椭圆在画布范围内
+                x1 = min(x1, width - size)
+                y1 = min(y1, height - size)
+                draw.ellipse([x1, y1, x1+size, y1+size], fill=color)
+        
+        elif style == "二次元":
+            # 更多明亮的色彩和几何形状
+            for i in range(num_shapes):
+                color = random.choice(valid_colors)
+                x = random.randint(0, width)
+                y = random.randint(0, height)
+                size = random.randint(10, 50)
+                shape_type = random.randint(0, 2)
+                if shape_type == 0:
+                    draw.rectangle([x, y, x+size, y+size], fill=color)
+                elif shape_type == 1:
+                    draw.ellipse([x, y, x+size, y+size], fill=color)
+                else:
+                    points = [(x, y), 
+                              (x+size, y), 
+                              (x+size//2, y+size)]
+                    draw.polygon(points, fill=color)
+        
+        else:
+            # 默认风格: 混合形状
+            for i in range(num_shapes):
+                color = random.choice(valid_colors)
+                x = random.randint(0, width)
+                y = random.randint(0, height)
+                size = random.randint(10, 80)
+                shape_type = random.randint(0, 2)
+                if shape_type == 0:
+                    draw.rectangle([x, y, x+size, y+size], fill=color)
+                elif shape_type == 1:
+                    draw.ellipse([x, y, x+size, y+size], fill=color)
+                else:
+                    draw.line([x, y, x+size, y+size], fill=color, width=random.randint(1, 5))
+        
+        # 添加提示词作为文本
+        font_size = 20
+        try:
+            # 尝试使用系统字体
+            font = ImageFont.truetype("arial.ttf", font_size)
+        except IOError:
+            # 如果无法加载字体，使用默认字体
+            font = ImageFont.load_default()
+        
+        # 添加文本描述
+        text_color = (0, 0, 0)  # 黑色文字
+        draw.text((10, 10), f"提示词: {prompt[:30]}...", fill=text_color, font=font)
+        draw.text((10, 10 + font_size), f"风格: {style}", fill=text_color, font=font)
+        draw.text((10, 10 + 2*font_size), f"质量: {quality_params.get('steps', '标准')}步", fill=text_color, font=font)
+        
+        # 保存图像
+        timestamp = int(time.time())
+        output_path = os.path.join(GENERATED_IMAGES_DIR, f"mock_{timestamp}_{seed}.png")
+        image.save(output_path)
+        
+        return output_path
     
     def _mock_image_variation(self, image_path, variation_strength):
         """
@@ -586,68 +490,131 @@ class ImageGenerator:
             # 如果处理失败，返回原图
             return image_path
     
-    def _get_colors_from_prompt(self, prompt, style):
+    def _get_colors_from_prompt(self, prompt, style=None):
         """
-        从提示词和风格中提取颜色
+        从提示词中提取颜色
         
         参数:
             prompt (str): 提示词
             style (str): 风格
             
         返回:
-            list: 颜色列表
+            list: 颜色列表 (RGB元组)
         """
-        # 常见颜色关键词映射
-        color_keywords = {
-            "红": [200, 50, 50],
-            "绿": [50, 180, 50],
-            "蓝": [50, 100, 200],
-            "黄": [230, 200, 50],
-            "紫": [150, 50, 200],
-            "青": [50, 200, 200],
-            "橙": [230, 140, 30],
-            "粉": [230, 150, 180],
-            "棕": [140, 80, 20],
-            "灰": [130, 130, 130],
-            "黑": [30, 30, 30],
-            "白": [240, 240, 240],
+        # 基础颜色
+        base_colors = [
+            (255, 182, 193),  # 浅粉红
+            (135, 206, 235),  # 天蓝色
+            (152, 251, 152),  # 淡绿色
+            (255, 215, 0),    # 金色
+            (221, 160, 221),  # 梅红色
+            (250, 128, 114),  # 鲑鱼色
+            (240, 230, 140)   # 卡其色
+        ]
+        
+        # 从提示词中提取关键词
+        keywords = {
+            # 自然元素
+            "海": [(0, 105, 148), (64, 224, 208), (0, 180, 240)],
+            "海洋": [(0, 105, 148), (64, 224, 208), (0, 180, 240)],
+            "海滩": [(244, 164, 96), (210, 180, 140), (0, 105, 148)],
+            "天空": [(135, 206, 235), (30, 144, 255), (0, 191, 255)],
+            "草地": [(124, 252, 0), (34, 139, 34), (50, 205, 50)],
+            "树": [(34, 139, 34), (0, 128, 0), (107, 142, 35)],
+            "森林": [(34, 139, 34), (0, 128, 0), (0, 100, 0)],
+            "山": [(139, 69, 19), (160, 82, 45), (210, 105, 30)],
+            "雪": [(255, 250, 250), (240, 255, 255), (255, 255, 255)],
+            "沙滩": [(244, 164, 96), (210, 180, 140), (255, 228, 181)],
+            "沙漠": [(244, 164, 96), (210, 180, 140), (222, 184, 135)],
+            "日落": [(255, 69, 0), (255, 99, 71), (255, 127, 80)],
+            "黎明": [(255, 165, 0), (255, 140, 0), (255, 127, 80)],
+            "夜晚": [(25, 25, 112), (0, 0, 128), (0, 0, 139)],
+            "夜景": [(25, 25, 112), (0, 0, 128), (75, 0, 130)],
+            
+            # 情绪元素
+            "快乐": [(255, 215, 0), (255, 165, 0), (255, 69, 0)],
+            "悲伤": [(0, 0, 139), (25, 25, 112), (65, 105, 225)],
+            "平静": [(173, 216, 230), (135, 206, 235), (176, 224, 230)],
+            "激情": [(255, 0, 0), (220, 20, 60), (178, 34, 34)],
+            "神秘": [(75, 0, 130), (72, 61, 139), (106, 90, 205)],
+            
+            # 季节
+            "春天": [(152, 251, 152), (124, 252, 0), (173, 255, 47)],
+            "夏天": [(0, 255, 127), (0, 250, 154), (60, 179, 113)],
+            "秋天": [(210, 105, 30), (184, 134, 11), (205, 133, 63)],
+            "冬天": [(230, 230, 250), (240, 248, 255), (248, 248, 255)],
+            
+            # 具体颜色
+            "红色": [(255, 0, 0), (220, 20, 60), (178, 34, 34)],
+            "蓝色": [(0, 0, 255), (0, 0, 205), (65, 105, 225)],
+            "绿色": [(0, 128, 0), (34, 139, 34), (0, 255, 0)],
+            "黄色": [(255, 255, 0), (255, 215, 0), (255, 165, 0)],
+            "紫色": [(128, 0, 128), (148, 0, 211), (186, 85, 211)],
+            "粉色": [(255, 192, 203), (255, 182, 193), (255, 105, 180)],
+            "橙色": [(255, 165, 0), (255, 140, 0), (255, 69, 0)],
         }
         
-        # 风格相关的默认颜色
+        # 检查风格对应的颜色
         style_colors = {
-            "写实": [[100, 100, 100], [150, 150, 150], [200, 200, 200]],
-            "油画": [[120, 80, 40], [40, 100, 160], [160, 160, 80]],
-            "水彩": [[200, 220, 255], [255, 200, 200], [200, 250, 200]],
-            "插画": [[255, 200, 100], [100, 200, 255], [200, 100, 255]],
-            "二次元": [[255, 170, 200], [170, 200, 255], [170, 255, 200]],
-            "像素艺术": [[100, 120, 200], [200, 100, 100], [100, 200, 100]],
-            "赛博朋克": [[0, 200, 255], [255, 0, 150], [150, 255, 0]],
-            "奇幻": [[100, 50, 200], [50, 200, 100], [200, 100, 50]],
-            "哥特": [[50, 0, 100], [100, 0, 50], [30, 30, 50]],
-            "印象派": [[200, 220, 100], [100, 200, 220], [220, 100, 200]],
-            "极简主义": [[240, 240, 240], [30, 30, 30], [200, 200, 200]],
-            "复古": [[200, 180, 140], [140, 120, 100], [180, 160, 120]],
-            "蒸汽朋克": [[180, 140, 100], [100, 80, 60], [140, 100, 60]],
-            "波普艺术": [[255, 50, 50], [50, 50, 255], [255, 255, 50]],
-            "超现实主义": [[100, 200, 255], [255, 100, 200], [200, 255, 100]]
+            "写实": [(240, 240, 240), (220, 220, 220), (200, 200, 200)],
+            "油画": [(210, 180, 140), (188, 143, 143), (244, 164, 96)],
+            "水彩": [(173, 216, 230), (240, 248, 255), (176, 224, 230)],
+            "插画": [(255, 182, 193), (152, 251, 152), (135, 206, 235)],
+            "二次元": [(255, 182, 193), (135, 206, 250), (255, 218, 185)],
+            "像素艺术": [(255, 0, 0), (0, 255, 0), (0, 0, 255)],
+            "赛博朋克": [(255, 0, 128), (0, 255, 255), (128, 0, 255)],
+            "奇幻": [(148, 0, 211), (138, 43, 226), (123, 104, 238)],
+            "哥特": [(25, 25, 25), (47, 79, 79), (119, 136, 153)],
+            "印象派": [(135, 206, 250), (152, 251, 152), (255, 215, 0)],
+            "极简主义": [(255, 255, 255), (240, 240, 240), (220, 220, 220)],
+            "复古": [(205, 133, 63), (244, 164, 96), (210, 180, 140)],
+            "蒸汽朋克": [(184, 134, 11), (139, 69, 19), (205, 133, 63)],
+            "波普艺术": [(255, 0, 0), (255, 255, 0), (0, 0, 255)],
+            "超现实主义": [(75, 0, 130), (0, 206, 209), (255, 20, 147)]
         }
         
-        # 从风格获取基础颜色
-        if not style or style not in style_colors:
-            base_colors = [[100, 100, 100], [200, 200, 200], [150, 150, 150]]
-        else:
-            base_colors = style_colors.get(style)
+        # 创建颜色列表
+        colors = list(base_colors)  # 复制基础颜色
         
-        # 从提示词中查找颜色关键词
-        detected_colors = []
-        if prompt:
-            for keyword, color in color_keywords.items():
-                if keyword in prompt:
-                    detected_colors.append(color)
+        # 添加风格相关颜色
+        if style and style in style_colors:
+            colors.extend(style_colors[style])
         
-        # 组合颜色
-        colors = base_colors + detected_colors if detected_colors else base_colors
-        return colors
+        # 检查提示词中的关键词
+        for keyword, keyword_colors in keywords.items():
+            if keyword in prompt:
+                colors.extend(keyword_colors)
+        
+        # 确保所有颜色都是整数元组
+        sanitized_colors = []
+        for color in colors:
+            # 确保是三元素的元组且所有元素都是整数
+            try:
+                if len(color) != 3:
+                    continue
+                sanitized_color = (int(color[0]), int(color[1]), int(color[2]))
+                
+                # 确保RGB值在0-255范围内
+                sanitized_color = (
+                    max(0, min(255, sanitized_color[0])),
+                    max(0, min(255, sanitized_color[1])),
+                    max(0, min(255, sanitized_color[2]))
+                )
+                
+                sanitized_colors.append(sanitized_color)
+            except (ValueError, TypeError):
+                # 跳过任何不能转换为整数元组的颜色
+                continue
+        
+        # 如果没有有效颜色，使用默认颜色
+        if not sanitized_colors:
+            sanitized_colors = [
+                (255, 255, 255), 
+                (200, 200, 200), 
+                (150, 150, 150)
+            ]
+        
+        return sanitized_colors
     
     def _simulate_translation(self, text):
         """
@@ -663,6 +630,65 @@ class ImageGenerator:
         if not text:
             return ""
         return f"[Translated: {text}]"
+
+    def _extract_colors_from_prompt(self, prompt):
+        """
+        从提示词中提取颜色关键词
+        
+        参数:
+            prompt (str): 提示词
+            
+        返回:
+            list: RGB颜色元组列表
+        """
+        # 颜色关键词及其对应RGB值
+        color_mapping = {
+            "红": (255, 0, 0),
+            "绿": (0, 255, 0),
+            "蓝": (0, 0, 255),
+            "黄": (255, 255, 0),
+            "紫": (128, 0, 128),
+            "青": (0, 255, 255),
+            "橙": (255, 165, 0),
+            "粉": (255, 192, 203),
+            "棕": (165, 42, 42),
+            "灰": (128, 128, 128),
+            "黑": (0, 0, 0),
+            "白": (255, 255, 255),
+            
+            # 英文颜色关键词
+            "red": (255, 0, 0),
+            "green": (0, 255, 0),
+            "blue": (0, 0, 255),
+            "yellow": (255, 255, 0),
+            "purple": (128, 0, 128),
+            "cyan": (0, 255, 255),
+            "orange": (255, 165, 0),
+            "pink": (255, 192, 203),
+            "brown": (165, 42, 42),
+            "gray": (128, 128, 128),
+            "black": (0, 0, 0),
+            "white": (255, 255, 255)
+        }
+        
+        # 提取颜色
+        found_colors = []
+        prompt_lower = prompt.lower()
+        
+        for color_word, rgb_value in color_mapping.items():
+            if color_word in prompt or color_word in prompt_lower:
+                found_colors.append(rgb_value)
+                
+        # 如果没有找到颜色，返回一些默认颜色
+        if not found_colors:
+            # 返回一些随机生成的颜色
+            for _ in range(3):
+                r = random.randint(0, 255)
+                g = random.randint(0, 255)
+                b = random.randint(0, 255)
+                found_colors.append((r, g, b))
+                
+        return found_colors
 
 # 预处理提示词
 def enhance_prompt(prompt, style=None, extra_details=None):

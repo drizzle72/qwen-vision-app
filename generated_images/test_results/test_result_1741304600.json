@@ -1,0 +1,16 @@
+{
+  "prompt": "春天的樱花树下，花瓣随风飘落",
+  "style": "写实",
+  "quality": "标准",
+  "aspect_ratio": "9:16 手机",
+  "enhancers": [
+    "细节增强"
+  ],
+  "seed": 42,
+  "mock_time": 0.07,
+  "api_time": 0.45,
+  "mock_path": "generated_images\\basic_mock_1741304600_42.png",
+  "api_path": "generated_images\\basic_mock_1741304600_42.png",
+  "comparison_path": "generated_images\\comparison_1741304600.png",
+  "timestamp": 1741304600.8228276
+}

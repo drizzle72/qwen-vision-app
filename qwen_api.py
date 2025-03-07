@@ -403,4 +403,4 @@ def parse_qwen_response(response_data):
         # 返回原始响应（用于调试）
         return f"无法解析响应格式: {json.dumps(response_data, ensure_ascii=False)}"
     except Exception as e:
-        return f"解析响应时出错: {str(e)}" 
+        return f"解析响应时出错: {str(e)}"
