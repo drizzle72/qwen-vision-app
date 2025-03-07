@@ -17,6 +17,8 @@ import numpy as np
 import json
 from PIL import ImageDraw, ImageFont
 import re
+import cv2
+from scipy.ndimage import gaussian_filter
 
 # 加载环境变量
 load_dotenv()
@@ -473,29 +475,72 @@ class ImageGenerator:
             # 转换为numpy数组
             img_array = np.array(original_img)
             
-            # 添加随机变化
+            # 创建多个变体效果
+            effects = []
+            
+            # 1. 基础噪声变化
             noise = np.random.normal(0, 30 * variation_strength, img_array.shape).astype(np.int16)
-            varied_array = np.clip(img_array.astype(np.int16) + noise, 0, 255).astype(np.uint8)
+            noise_varied = np.clip(img_array.astype(np.int16) + noise, 0, 255).astype(np.uint8)
+            effects.append(Image.fromarray(noise_varied))
             
-            # 调整颜色和对比度
-            varied_img = Image.fromarray(varied_array)
+            # 2. 颜色变化
+            hue_shift = random.uniform(-0.2, 0.2) * variation_strength
+            saturation_shift = random.uniform(-0.3, 0.3) * variation_strength
+            value_shift = random.uniform(-0.2, 0.2) * variation_strength
             
-            # 随机调整亮度、对比度和饱和度
+            # 转换为HSV空间
+            img_hsv = cv2.cvtColor(img_array, cv2.COLOR_RGB2HSV).astype(np.float32)
+            
+            # 应用HSV变化
+            img_hsv[..., 0] = (img_hsv[..., 0] + hue_shift * 180) % 180
+            img_hsv[..., 1] = np.clip(img_hsv[..., 1] * (1 + saturation_shift), 0, 255)
+            img_hsv[..., 2] = np.clip(img_hsv[..., 2] * (1 + value_shift), 0, 255)
+            
+            # 转换回RGB
+            color_varied = cv2.cvtColor(img_hsv.astype(np.uint8), cv2.COLOR_HSV2RGB)
+            effects.append(Image.fromarray(color_varied))
+            
+            # 3. 对比度和亮度变化
+            contrast_varied = np.clip((img_array.astype(np.float32) - 128) * (1 + variation_strength * 0.5) + 128, 0, 255).astype(np.uint8)
+            effects.append(Image.fromarray(contrast_varied))
+            
+            # 4. 模糊效果
+            blur_varied = gaussian_filter(img_array, sigma=variation_strength * 2)
+            effects.append(Image.fromarray(blur_varied.astype(np.uint8)))
+            
+            # 5. 锐化效果
+            kernel = np.array([[-1,-1,-1], [-1,9,-1], [-1,-1,-1]]) * variation_strength
+            sharp_varied = cv2.filter2D(img_array, -1, kernel)
+            effects.append(Image.fromarray(np.clip(sharp_varied, 0, 255).astype(np.uint8)))
+            
+            # 随机选择两个效果进行混合
+            effect1, effect2 = random.sample(effects, 2)
+            blend_ratio = random.uniform(0.3, 0.7)
+            varied_img = Image.blend(effect1, effect2, blend_ratio)
+            
+            # 应用最终的增强
             from PIL import ImageEnhance
             
+            # 随机调整亮度
             enhancer = ImageEnhance.Brightness(varied_img)
             varied_img = enhancer.enhance(random.uniform(0.8, 1.2))
             
+            # 随机调整对比度
             enhancer = ImageEnhance.Contrast(varied_img)
             varied_img = enhancer.enhance(random.uniform(0.9, 1.3))
             
+            # 随机调整饱和度
             enhancer = ImageEnhance.Color(varied_img)
             varied_img = enhancer.enhance(random.uniform(0.9, 1.4))
+            
+            # 随机调整锐度
+            enhancer = ImageEnhance.Sharpness(varied_img)
+            varied_img = enhancer.enhance(random.uniform(0.8, 1.5))
             
             # 保存结果
             timestamp = int(time.time())
             output_path = os.path.join(GENERATED_IMAGES_DIR, f"var_{timestamp}_{os.path.basename(image_path)}")
-            varied_img.save(output_path)
+            varied_img.save(output_path, quality=95)
             
             return output_path
         
