@@ -25,42 +25,46 @@ from image_generator import (
 # 加载环境变量
 load_dotenv()
 
-# 定义可用的主题
-THEMES = {
-    "默认蓝": {"primary_color": "#1E88E5", "background_color": "#FFFFFF", "text_color": "#424242", "font": "sans serif"},
-    "暗夜模式": {"primary_color": "#BB86FC", "background_color": "#121212", "text_color": "#E0E0E0", "font": "sans serif"},
-    "森林绿": {"primary_color": "#4CAF50", "background_color": "#F5F9F5", "text_color": "#2E4632", "font": "sans serif"},
-    "橙色暖阳": {"primary_color": "#FF9800", "background_color": "#FFF9EF", "text_color": "#5D4037", "font": "sans serif"},
-    "樱花粉": {"primary_color": "#EC407A", "background_color": "#FFF0F4", "text_color": "#880E4F", "font": "sans serif"}
-}
-
-# 定义可用的字体
-FONTS = {
-    "默认字体": "sans serif",
-    "优雅衬线": "serif",
-    "等宽代码": "monospace", 
-    "圆润现代": "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif",
-    "简约无衬线": "'Helvetica Neue', Helvetica, Arial, sans-serif"
-}
-
-# 设置页面配置
-def set_page_config():
-    # 从会话状态获取当前主题
-    current_theme = st.session_state.get("theme", "默认蓝")
-    theme_config = THEMES[current_theme]
-    
+# 页面配置必须是第一个st命令
 st.set_page_config(
-        page_title="通义千问视觉智能助手",
-        page_icon="🧠",
+    page_title="通义千问视觉智能助手",
+    page_icon="🧠",
     layout="wide",
     initial_sidebar_state="expanded",
-        menu_items={
-            'About': "# 通义千问视觉智能助手\n由通义千问视觉语言模型驱动的多功能AI助手"
-        }
+    menu_items={
+        'About': "# 通义千问视觉智能助手\n由通义千问视觉语言模型驱动的多功能AI助手"
+    }
 )
 
-    # 应用主题样式
-
+# 应用默认样式
+st.markdown(
+    """
+    <style>
+    .stApp {
+        background-color: #FFFFFF;
+        color: #424242;
+    }
+    .stButton button {
+        background-color: #1E88E5;
+        color: white;
+    }
+    .stTextInput input, .stTextArea textarea {
+        border-color: #1E88E5;
+    }
+    .stSelectbox, .stMultiselect {
+        border-color: #1E88E5;
+    }
+    h1, h2, h3, h4, h5, h6 {
+        color: #1E88E5;
+        font-family: sans-serif;
+    }
+    .stMarkdown {
+        font-family: sans-serif;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
 
 def save_text_as_file(text, filename):
     """保存文本为文件"""
@@ -114,9 +118,6 @@ def handle_api_response(response_data, default_message="无法解析响应"):
         return default_message
 
 def main():
-    # 应用页面配置和主题
-    set_page_config()
-    
     # 标题和介绍
     st.markdown('<h1 class="main-title">通义千问视觉智能助手</h1>', unsafe_allow_html=True)
     st.markdown('<p class="subtitle">基于通义千问视觉语言模型的多功能AI助手，支持图像分析、作文生成、解题辅助和AI绘画</p>', unsafe_allow_html=True)
@@ -127,100 +128,6 @@ def main():
         with cols[1]:
             if st.button("📞 联系作者", key="contact_button"):
                 st.session_state["show_contact"] = True
-    
-    # 添加主题选择器
-    with st.expander("🎨 应用主题设置", expanded=False):
-        st.write("### 主题设置")
-        theme_cols = st.columns(len(THEMES))
-        
-        # 初始化会话状态
-        if "theme" not in st.session_state:
-            st.session_state.theme = "默认蓝"
-        
-        if "font" not in st.session_state:
-            st.session_state.font = "默认字体"
-        
-        # 显示主题选项
-        for i, (theme_name, theme_config) in enumerate(THEMES.items()):
-            with theme_cols[i]:
-                # 创建主题样式预览
-                st.markdown(
-                    f"""
-                    <div style="background-color: {theme_config['background_color']}; 
-                                padding: 10px; 
-                                border-radius: 5px;
-                                border: 2px solid {theme_config['primary_color'] if theme_name == st.session_state.theme else 'transparent'};
-                                text-align: center;
-                                cursor: pointer;" 
-                         onclick="this.style.border='2px solid {theme_config['primary_color']}'">
-                        <h4 style="color: {theme_config['primary_color']}; margin: 5px 0;">{theme_name}</h4>
-                        <div style="background-color: {theme_config['primary_color']}; height: 15px; margin: 5px 0;"></div>
-                        <p style="color: {theme_config['text_color']}; margin: 5px 0;">示例文本</p>
-                    </div>
-                    """, 
-                    unsafe_allow_html=True
-                )
-                
-                # 使用按钮选择主题
-                if st.button(f"选择 {theme_name}", key=f"theme_{theme_name}"):
-                    st.session_state.theme = theme_name
-                    st.experimental_rerun()
-        
-        # 字体选择
-        st.write("### 字体设置")
-        selected_font = st.selectbox(
-            "选择字体风格",
-            options=list(FONTS.keys()),
-            index=list(FONTS.keys()).index(st.session_state.get("font", "默认字体")),
-            key="font_selector"
-        )
-        
-        # 如果字体被改变
-        if selected_font != st.session_state.get("font"):
-            st.session_state.font = selected_font
-            # 更新当前主题的字体
-            current_theme = st.session_state.get("theme", "默认蓝")
-            THEMES[current_theme]["font"] = FONTS[selected_font]
-            st.experimental_rerun()
-        
-        # 自定义主题
-        st.write("### 创建自定义主题")
-        with st.form("custom_theme_form"):
-            custom_theme_name = st.text_input("主题名称", value="我的主题")
-            
-            # 颜色选择器
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                primary_color = st.color_picker("主色调", value="#1E88E5")
-            with col2:
-                background_color = st.color_picker("背景色", value="#FFFFFF")
-            with col3:
-                text_color = st.color_picker("文字颜色", value="#424242")
-                
-            # 提交按钮
-            submitted = st.form_submit_button("创建并应用")
-            if submitted:
-                # 确保自定义主题名称不与现有主题冲突
-                if custom_theme_name in THEMES and not custom_theme_name.startswith("自定义"):
-                    custom_theme_name = "自定义" + custom_theme_name
-                
-                # 添加或更新自定义主题
-                THEMES[custom_theme_name] = {
-                    "primary_color": primary_color,
-                    "background_color": background_color,
-                    "text_color": text_color,
-                    "font": FONTS[st.session_state.get("font", "默认字体")]
-                }
-                
-                # 设置当前主题为自定义主题
-                st.session_state.theme = custom_theme_name
-                st.experimental_rerun()
-        
-        # 重置按钮
-        if st.button("重置为默认主题"):
-            st.session_state.theme = "默认蓝"
-            st.session_state.font = "默认字体"
-            st.experimental_rerun()
     
     # 创建侧边栏选择功能区
     with st.sidebar:

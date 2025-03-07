@@ -16,6 +16,7 @@ from dotenv import load_dotenv
 import numpy as np
 import json
 from PIL import ImageDraw, ImageFont
+import re
 
 # 加载环境变量
 load_dotenv()
@@ -195,7 +196,7 @@ class ImageGenerator:
         调用Stability AI API生成图像
         
         参数:
-            prompt (str): 提示词
+            prompt (str): 提示词(英文)
             negative_prompt (str): 负面提示词
             quality_params (dict): 质量参数
             seed (int): 随机种子
@@ -205,6 +206,18 @@ class ImageGenerator:
         """
         if not self.stability_api_key:
             raise ValueError("未提供Stability API密钥")
+            
+        # 确保提示词是英文
+        if not prompt.isascii():
+            print(f"原始提示词(中文): {prompt}")
+            prompt = self._simulate_translation(prompt)
+            print(f"转换后提示词(英文): {prompt}")
+            
+        # 确保负面提示词是英文
+        if negative_prompt and not negative_prompt.isascii():
+            print(f"原始负面提示词(中文): {negative_prompt}")
+            negative_prompt = self._simulate_translation(negative_prompt)
+            print(f"转换后负面提示词(英文): {negative_prompt}")
             
         # 准备API调用
         headers = {
@@ -228,7 +241,8 @@ class ImageGenerator:
             "height": quality_params["height"],
             "width": quality_params["width"],
             "samples": 1,
-            "steps": quality_params["steps"]
+            "steps": quality_params["steps"],
+            "style_preset": "photographic"  # 默认使用逼真摄影风格
         }
         
         # 添加种子(如果提供)
@@ -530,6 +544,20 @@ class ImageGenerator:
             "黎明": [(255, 165, 0), (255, 140, 0), (255, 127, 80)],
             "夜晚": [(25, 25, 112), (0, 0, 128), (0, 0, 139)],
             "夜景": [(25, 25, 112), (0, 0, 128), (75, 0, 130)],
+            "山": "mountain",
+            "山间": "mountain valley",
+            "山顶": "mountain top",
+            "山坡": "hillside",
+            "山谷": "valley",
+            "水晶": "crystal",
+            "冰": "ice",
+            "水面": "water surface",
+            "烟雾": "smoke",
+            "雾": "fog",
+            "云": "cloud",
+            "露水": "dew",
+            "海浪": "waves",
+            "溪流": "stream",
             
             # 情绪元素
             "快乐": [(255, 215, 0), (255, 165, 0), (255, 69, 0)],
@@ -618,18 +646,97 @@ class ImageGenerator:
     
     def _simulate_translation(self, text):
         """
-        模拟中文到英文的翻译（实际应用中应调用翻译API）
+        模拟中文到英文的翻译，并优化为符合Stability API的格式
         
         参数:
             text (str): 中文文本
             
         返回:
-            str: 模拟的英文文本
+            str: 优化后的英文文本
         """
-        # 简单模拟，实际应用应使用专业翻译API
-        if not text:
-            return ""
-        return f"[Translated: {text}]"
+        # 更完整的中文到英文翻译映射
+        translation_map = {
+            # 颜色
+            "蓝色": "blue", "红色": "red", "绿色": "green", "黄色": "yellow", "紫色": "purple",
+            "白色": "white", "黑色": "black", "灰色": "gray", "橙色": "orange", "粉色": "pink",
+            "青色": "cyan", "棕色": "brown", "金色": "golden", "银色": "silver", "彩色": "colorful",
+            
+            # 自然元素
+            "背景": "background", "花朵": "flower", "风景": "landscape", "山脉": "mountains",
+            "树木": "trees", "海洋": "ocean", "天空": "sky", "云朵": "clouds", "太阳": "sun",
+            "月亮": "moon", "星星": "stars", "森林": "forest", "草地": "grass", "沙漠": "desert",
+            "雪": "snow", "雨": "rain", "水": "water", "火": "fire", "岩石": "rock",
+            "瀑布": "waterfall", "湖泊": "lake", "河流": "river", "海边": "seaside", "沙滩": "beach",
+            "山": "mountain", "山间": "mountain valley", "山顶": "mountain top", "山坡": "hillside", 
+            "山谷": "valley", "水晶": "crystal", "冰": "ice", "水面": "water surface", "烟雾": "smoke",
+            "雾": "fog", "云": "cloud", "露水": "dew", "海浪": "waves", "溪流": "stream",
+            
+            # 人工环境
+            "城市": "city", "建筑": "building", "房子": "house", "小屋": "cottage", "宫殿": "palace",
+            "桥": "bridge", "道路": "road", "街道": "street", "街景": "street view", "公园": "park",
+            "花园": "garden", "窗台": "windowsill", "门": "door", "窗户": "window", "灯光": "light",
+            
+            # 主体
+            "人物": "person", "动物": "animal", "猫": "cat", "狗": "dog", "鸟": "bird", "鱼": "fish",
+            "龙": "dragon", "老虎": "tiger", "狮子": "lion", "熊": "bear", "兔子": "rabbit",
+            "船": "boat", "帆船": "sailboat", "汽车": "car", "飞机": "airplane", "风筝": "kite",
+            "女孩": "girl", "男孩": "boy", "女人": "woman", "男人": "man", "孩子": "child", 
+            "婴儿": "baby", "老人": "elderly", "人们": "people", "机器人": "robot",
+            
+            # 风格
+            "写实": "realistic", "卡通": "cartoon", "油画": "oil painting", "水彩": "watercolor",
+            "素描": "sketch", "抽象": "abstract", "未来": "futuristic", "古典": "classical",
+            "现代": "modern", "复古": "vintage", "科幻": "sci-fi", "魔幻": "fantasy", 
+            "赛博朋克": "cyberpunk", "蒸汽朋克": "steampunk", "哥特": "gothic", "波普": "pop art",
+            "极简": "minimalist", "奢华": "luxurious", "可爱": "cute", "恐怖": "horror",
+            
+            # 质量描述
+            "高清": "high definition", "细节": "detailed", "光效": "lighting effect",
+            "高质量": "high quality", "精致": "exquisite", "清晰": "clear", "模糊": "blurry",
+            "锐利": "sharp", "柔和": "soft", "透明": "transparent", "反光": "reflective",
+            "发光": "glowing", "闪烁": "sparkling", "质感": "texture",
+            
+            # 光照环境
+            "日落": "sunset", "日出": "sunrise", "黎明": "dawn", "黄昏": "dusk", "夜晚": "night",
+            "夜景": "night view", "白天": "daytime", "下午": "afternoon", "阳光": "sunlight",
+            "月光": "moonlight", "阴影": "shadow", "明亮": "bright", "黑暗": "dark",
+            
+            # 情感/氛围
+            "梦幻": "dreamy", "超现实": "surreal", "宁静": "peaceful", "活泼": "lively", 
+            "神秘": "mysterious", "恐怖": "scary", "奇幻": "fantastic", "浪漫": "romantic",
+            "悲伤": "sad", "快乐": "happy", "愤怒": "angry", "孤独": "lonely", "温暖": "warm",
+            
+            # 常见短语结构
+            "下的": " with ", "在": " in ", "与": " with ", "和": " and ", "的": "'s ", "一只": "a ",
+            "一个": "a ", "这个": "this ", "那个": "that ", "中的": " in the ", "上的": " on the ",
+            "远处": "distance", "远处的": "distant ", "中间": "middle", "中间的": "middle ",
+            "底部": "bottom", "底部的": "bottom ", "顶部": "top", "顶部的": "top ",
+            "风格的": " style ", "充满": "full of ", "覆盖": "covered with ", "照射": "lighting",
+            "装饰": "decorated with ", "环绕": "surrounded by ", "飘扬": "floating ",
+        }
+        
+        # 替换中文关键词为英文
+        translated = text
+        for zh, en in translation_map.items():
+            translated = translated.replace(zh, en)
+        
+        # 清理可能出现的多个空格和标点符号
+        translated = re.sub(r'\s+', ' ', translated)  # 将多个空格合并为一个
+        translated = translated.replace("，", ", ").replace("。", ". ").replace("：", ": ")
+        translated = translated.replace("；", "; ").replace("！", "! ").replace("？", "? ")
+        translated = translated.strip()  # 去除开头和结尾的空格
+        
+        # 如果没有实质内容的变化（可能是因为已经是英文或者没有匹配到任何词汇）
+        if translated.replace(" ", "") == text.replace(" ", ""):
+            return text
+            
+        # 调整格式符合Stability API偏好的提示词格式
+        # 添加常用的高质量提示词，如果尚未存在
+        enhanced_terms = "detailed, high quality, masterpiece"
+        if not any(term in translated.lower() for term in ["detailed", "high quality", "masterpiece"]):
+            translated += f", {enhanced_terms}"
+            
+        return translated
 
     def _extract_colors_from_prompt(self, prompt):
         """
